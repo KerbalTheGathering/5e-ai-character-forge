@@ -5,6 +5,10 @@ Generate playable D&D 5e characters with AI backstories, portraits, spells, and 
 – API: http://localhost:8000
 – Web: http://localhost:5173
 
+![New Character Screen](resources/character-screen-new.png)
+
+![Library Screen](resources/character-screen-library.png)
+
 **What it does**
 - Character draft generator from 5e SRD (class, race, background, equipment, features, spell slots).
 - Backstory generation (tone/length/hooks) via local LLM or Gemini.

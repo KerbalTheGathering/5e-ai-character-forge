@@ -14,6 +14,8 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
+import time
+import uuid
 import httpx
 from requests_cache import CachedSession
 
@@ -225,6 +227,32 @@ def use_local(engine: str | None) -> bool:
 
 app = FastAPI(title="5e-ai-character-forge API", version="0.1.0")
 
+# Request/response logging middleware
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    rid = uuid.uuid4().hex[:8]
+    start = time.perf_counter()
+    path = request.url.path
+    method = request.method
+    try:
+        logger.info("%s %s start rid=%s", method, path, rid)
+        response = await call_next(request)
+        duration_ms = int((time.perf_counter() - start) * 1000)
+        logger.info("%s %s done status=%s rid=%s duration_ms=%s", method, path, getattr(response, 'status_code', 'NA'), rid, duration_ms)
+        try:
+            response.headers["X-Request-ID"] = rid
+        except Exception:
+            pass
+        return response
+    except HTTPException as he:
+        duration_ms = int((time.perf_counter() - start) * 1000)
+        logger.warning("%s %s http_error status=%s detail=%s rid=%s duration_ms=%s", method, path, he.status_code, he.detail, rid, duration_ms)
+        raise
+    except Exception as e:
+        duration_ms = int((time.perf_counter() - start) * 1000)
+        logger.exception("%s %s unhandled_error rid=%s duration_ms=%s", method, path, rid, duration_ms)
+        raise
+
 # CORS: allow local Vite
 app.add_middleware(
     CORSMiddleware,
@@ -344,6 +372,7 @@ async def health_model():
 
 @app.get("/api/rules/{path:path}")
 async def rules_proxy(path: str):
+    logger.debug("rules_proxy: path=%s", path)
     # Proxies dnd5eapi with caching + minimal normalization
     url = f"{RULES_BASE}/{path.lstrip('/')}"
     try:
@@ -359,6 +388,7 @@ async def rules_proxy(path: str):
 
 @app.post("/api/generate", response_model=CharacterDraft)
 async def generate_character(payload: GenerateInput):
+    logger.debug("generate_character: class=%s race=%s background=%s level=%s", payload.class_index, payload.race_index, payload.background_index, payload.level)
     # fetch class / race / background
     cls = await fetch_json(f"{RULES_BASE}/{RULES_API_PREFIX}/classes/{payload.class_index}")
     race = await fetch_json(f"{RULES_BASE}/{RULES_API_PREFIX}/races/{payload.race_index}")
@@ -448,6 +478,7 @@ async def generate_character(payload: GenerateInput):
 
 @app.get("/api/roll/abilities", response_model=AbilitySet)
 async def roll_abilities(seed: int | None = Query(default=None, description="optional seed for reproducibility")):
+    logger.debug("roll_abilities: seed=%s", seed)
     return roll_ability_set(seed)
 
 BACKSTORY_SYS = (
@@ -457,6 +488,7 @@ BACKSTORY_SYS = (
 
 @app.post("/api/backstory", response_model=BackstoryResult)
 async def backstory_route(payload: BackstoryInput, engine: str | None = Query(default=None)):
+    logger.debug("backstory: request received for %s/%s level %s", payload.draft.race, payload.draft.cls, payload.draft.level)
     model = None
     if not use_local(engine):
         if not GOOGLE_API_KEY:
@@ -516,6 +548,7 @@ MI_GUIDE = (
 
 @app.post("/api/items/generate", response_model=MagicItem)
 async def items_generate(payload: MagicItemInput, engine: str | None = Query(default=None)):
+    logger.debug("items: generate request name=%s rarity=%s type=%s", payload.name, payload.rarity, payload.item_type)
     model = None
     if not use_local(engine):
         if not GOOGLE_API_KEY:
@@ -549,6 +582,7 @@ async def items_generate(payload: MagicItemInput, engine: str | None = Query(def
 
 @app.post("/api/items/save")
 async def items_save(payload: MagicItemExport):
+    logger.debug("items: save %s", payload.item.name)
     con = db()
     cur = con.cursor()
     created_at = datetime.utcnow().isoformat(timespec="seconds") + "Z"
@@ -561,6 +595,7 @@ async def items_save(payload: MagicItemExport):
 
 @app.get("/api/items/list")
 async def items_list(limit: int = 10, page: int = 1, search: str | None = None, sort: str = "created_desc"):
+    logger.debug("items: list limit=%s page=%s search=%s sort=%s", limit, page, search, sort)
     con = db()
     q_base = "FROM item_library"
     params: list[object] = []
@@ -585,6 +620,7 @@ async def items_list(limit: int = 10, page: int = 1, search: str | None = None, 
 
 @app.get("/api/items/get/{item_id}")
 async def items_get(item_id: int):
+    logger.debug("items: get id=%s", item_id)
     con = db(); row = con.execute("SELECT id, name, created_at, item_json FROM item_library WHERE id = ?", (item_id,)).fetchone(); con.close()
     if not row: raise HTTPException(404, "Not found")
     import json
@@ -593,6 +629,7 @@ async def items_get(item_id: int):
 
 @app.delete("/api/items/delete/{item_id}")
 async def items_delete(item_id: int):
+    logger.debug("items: delete id=%s", item_id)
     con = db(); cur = con.cursor(); cur.execute("DELETE FROM item_library WHERE id = ?", (item_id,)); con.commit(); ok = cur.rowcount; con.close()
     if not ok: raise HTTPException(404, "Not found")
     return {"ok": True}
@@ -695,6 +732,7 @@ async def generate_portrait(payload: ExportInput, engine: str | None = Query(def
 
 @app.post("/api/export/json")
 async def export_json(payload: ExportInput):
+    logger.debug("export_json: name=%s class=%s race=%s", payload.draft.name, payload.draft.cls, payload.draft.race)
     data = {"draft": payload.draft.model_dump(), "backstory": payload.backstory.model_dump() if payload.backstory else None}
     filename = f"{payload.draft.race}_{payload.draft.cls}_lvl{payload.draft.level}.json".replace(" ", "_")
     headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
@@ -702,6 +740,7 @@ async def export_json(payload: ExportInput):
 
 @app.post("/api/export/md")
 async def export_md(payload: ExportInput):
+    logger.debug("export_md: name=%s class=%s race=%s", payload.draft.name, payload.draft.cls, payload.draft.race)
     md = markdown_from_draft(payload.draft, payload.backstory)
     filename = f"{payload.draft.race}_{payload.draft.cls}_lvl{payload.draft.level}.md".replace(" ", "_")
     return PlainTextResponse(content=md, media_type="text/markdown", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
@@ -710,6 +749,7 @@ from .schemas import ExportInput  # already imported earlier
 
 @app.post("/api/library/save")
 async def library_save(payload: SaveInput):
+    logger.debug("library: save name=%s class=%s race=%s", payload.draft.name, payload.draft.cls, payload.draft.race)
     # default a name if not provided in draft
     name = payload.draft.name or f"{payload.draft.race} {payload.draft.cls} L{payload.draft.level}"
     created_at = datetime.utcnow().isoformat(timespec="seconds") + "Z"
@@ -785,6 +825,7 @@ SPELL_GUIDE = (
 
 @app.post("/api/spells/generate", response_model=Spell)
 async def spells_generate(payload: SpellInput, engine: str | None = Query(default=None)):
+    logger.debug("spells: generate request name=%s level=%s school=%s classes=%s target=%s intent=%s", payload.name, payload.level, payload.school, payload.classes, payload.target, payload.intent)
     model = None
     if not use_local(engine):
         if not GOOGLE_API_KEY:
@@ -813,19 +854,84 @@ async def spells_generate(payload: SpellInput, engine: str | None = Query(defaul
             text = text.strip("`").replace("json\n","").replace("\njson","")
         import json
         data = json.loads(text)
-        spell = Spell(**data)
+
+        # Normalize common LLM variations to avoid 502s
+        def _to_bool(v):
+            if isinstance(v, bool):
+                return v
+            if isinstance(v, (int, float)):
+                return bool(v)
+            if isinstance(v, str):
+                return v.strip().lower() in {"true","yes","y","1","required","requires","require"}
+            return False
+
+        norm: dict = {}
+        norm["name"] = str(data.get("name") or name)
+        try:
+            lvl_raw = data.get("level", level)
+            lvl = int(lvl_raw)
+        except Exception:
+            lvl = level
+        norm["level"] = max(0, min(9, lvl))
+        norm["school"] = str(data.get("school") or school)
+
+        cls_raw = data.get("classes")
+        if isinstance(cls_raw, str):
+            cls_list = [c.strip() for c in cls_raw.split(",") if c.strip()]
+        elif isinstance(cls_raw, list):
+            cls_list = [str(c).strip() for c in cls_raw if str(c).strip()]
+        else:
+            cls_list = [c.strip() for c in classes.split(",") if c.strip()]
+        norm["classes"] = cls_list
+
+        norm["casting_time"] = str(data.get("casting_time") or "1 action")
+        norm["range"] = str(data.get("range") or ("Self" if target == "self" else "60 feet"))
+        norm["duration"] = str(data.get("duration") or "Instantaneous")
+
+        comps = data.get("components")
+        if isinstance(comps, list):
+            comps_s = ", ".join([str(x) for x in comps])
+        elif isinstance(comps, dict):
+            v = comps.get("verbal") or comps.get("v") or comps.get("V")
+            s = comps.get("somatic") or comps.get("s") or comps.get("S")
+            m = comps.get("material") or comps.get("m") or comps.get("M")
+            parts = []
+            if v: parts.append("V")
+            if s: parts.append("S")
+            if m: parts.append("M" + (f" ({m})" if isinstance(m, str) and m else ""))
+            comps_s = ", ".join(parts) if parts else "V, S"
+        else:
+            comps_s = str(comps or "V, S")
+        norm["components"] = comps_s
+
+        norm["concentration"] = _to_bool(data.get("concentration", False))
+        norm["ritual"] = _to_bool(data.get("ritual", False))
+        norm["description"] = str(data.get("description") or "")
+        if not norm["description"].strip():
+            norm["description"] = "No description provided."
+        dmg = data.get("damage")
+        norm["damage"] = None if dmg in ("", None) else str(dmg)
+        sv = data.get("save")
+        norm["save"] = None if sv in ("", None) else str(sv)
+
+        logger.debug("spells: normalized payload=%s", {k: (v if k != 'description' else (v[:60]+'...')) for k,v in norm.items()})
+
+        spell = Spell(**norm)
         return spell
     except Exception as e:
+        logger.exception("spells: generation failed")
         raise HTTPException(502, f"spell generation failed: {e}")
 
 @app.post("/api/spells/save")
 async def spells_save(payload: SpellExport):
+    logger.debug("spells: save %s", payload.spell.name)
     con = db(); cur = con.cursor(); created_at = datetime.utcnow().isoformat(timespec="seconds") + "Z"
     cur.execute("INSERT INTO spell_library (name, created_at, spell_json, prompt) VALUES (?, ?, ?, ?)", (payload.spell.name, created_at, payload.spell.model_dump_json(), None))
     con.commit(); new_id = cur.lastrowid; con.close(); return {"id": new_id, "name": payload.spell.name, "created_at": created_at}
 
 @app.get("/api/spells/list")
 async def spells_list(limit: int = 10, page: int = 1, search: str | None = None, sort: str = "created_desc"):
+    logger.debug("spells: list limit=%s page=%s search=%s sort=%s", limit, page, search, sort)
     con = db(); q_base = "FROM spell_library"; params: list[object] = []
     if search: q_base += " WHERE name LIKE ?"; params.append(f"%{search}%")
     total = con.execute(f"SELECT COUNT(*) {q_base}", params).fetchone()[0]
@@ -836,6 +942,7 @@ async def spells_list(limit: int = 10, page: int = 1, search: str | None = None,
 
 @app.get("/api/spells/get/{spell_id}")
 async def spells_get(spell_id: int):
+    logger.debug("spells: get id=%s", spell_id)
     con = db(); row = con.execute("SELECT id,name,created_at,spell_json FROM spell_library WHERE id=?", (spell_id,)).fetchone(); con.close()
     if not row: raise HTTPException(404, "Not found")
     import json
@@ -844,11 +951,13 @@ async def spells_get(spell_id: int):
 
 @app.delete("/api/spells/delete/{spell_id}")
 async def spells_delete(spell_id: int):
+    logger.debug("spells: delete id=%s", spell_id)
     con = db(); cur = con.cursor(); cur.execute("DELETE FROM spell_library WHERE id=?", (spell_id,)); con.commit(); ok = cur.rowcount; con.close();
     if not ok: raise HTTPException(404, "Not found"); return {"ok": True}
 
 @app.get("/api/library/list")
 async def library_list(limit: int = 10, page: int = 1, search: str | None = None, sort: str = "created_desc"):
+    logger.debug("library: list limit=%s page=%s search=%s sort=%s", limit, page, search, sort)
     con = db()
     q_base = "FROM library"
     params: list[object] = []
@@ -873,6 +982,7 @@ async def library_list(limit: int = 10, page: int = 1, search: str | None = None
 
 @app.get("/api/library/get/{item_id}")
 async def library_get(item_id: int):
+    logger.debug("library: get id=%s", item_id)
     con = db()
     row = con.execute("SELECT id, name, created_at, draft_json, backstory_json, portrait_png FROM library WHERE id = ?", (item_id,)).fetchone()
     con.close()
@@ -891,6 +1001,7 @@ async def library_get(item_id: int):
 
 @app.post("/api/export/pdf")
 async def export_pdf(payload: ExportPDFInput):
+    logger.debug("export_pdf: name=%s class=%s race=%s portrait=%s", payload.draft.name, payload.draft.cls, payload.draft.race, bool(payload.portrait_base64))
     try:
         from reportlab.lib.pagesizes import letter
         from reportlab.lib.units import inch
