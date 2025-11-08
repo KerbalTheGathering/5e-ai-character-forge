@@ -1,0 +1,66 @@
+# --- OS cruft ---
+.DS_Store
+Thumbs.db
+.AppleDouble
+.LSOverride
+
+# --- Python / FastAPI ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.orig
+.eggs/
+*.egg-info/
+dist/
+build/
+pip-wheel-metadata/
+.cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyright/
+.pyre/
+.venv/
+venv/
+env/
+.coverage
+.coverage.*
+htmlcov/
+# Local data/logs (future DB or run logs)
+*.sqlite
+*.sqlite3
+data/*.db
+logs/
+*.log
+
+# --- Node / Vite (root or nested) ---
+node_modules/
+dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Frontend app folder
+web/node_modules/
+web/dist/
+web/.vite/
+web/.cache/
+web/npm-debug.log*
+web/yarn-debug.log*
+web/yarn-error.log*
+web/pnpm-debug.log*
+
+# --- Env secrets ---
+.env
+.env.*
+!.env.example
+web/.env
+web/.env.*
+!web/.env.example
+
+# --- Editors / IDEs ---
+.vscode/
+.idea/
+*.swp
+*.swo
