@@ -64,23 +64,17 @@ export default function Sidebar({
         </div>
       </div>
 
-      <div className="sidebar-status">
-        <span className={`status-pill ${apiOk ? "status-ok" : apiOk === false ? "status-down" : ""}`}>
-          <span className="dot" />
-          {expanded && (apiOk === null ? "Checking" : apiOk ? "Online" : "Offline")}
-        </span>
-      </div>
-
       <nav className="sidebar-nav">
-        {expanded && <div className="nav-title">Character</div>}
+        <div className="nav-title">{expanded ? 'Character' : 'Char'}</div>
         <button className={`nav-btn ${section === "char-new" ? "nav-active" : ""}`} onClick={()=>onSelect("char-new")} title="New Character">
           <IconWand />{expanded && <span>New</span>}
         </button>
         <button className={`nav-btn ${section === "char-lib" ? "nav-active" : ""}`} onClick={()=>onSelect("char-lib")} title="Character Library">
           <IconLibrary />{expanded && <span>Library</span>}
         </button>
+        {/* Progression integrated into Character flow; removed standalone entries */}
 
-        {expanded && <div className="nav-title" style={{marginTop:'.6rem'}}>Magic Item</div>}
+        <div className="nav-title" style={{marginTop:'.6rem'}}>Item</div>
         <button className={`nav-btn ${section === "item-new" ? "nav-active" : ""}`} onClick={()=>onSelect("item-new")} title="New Magic Item">
           <IconWand />{expanded && <span>New</span>}
         </button>
@@ -88,7 +82,7 @@ export default function Sidebar({
           <IconLibrary />{expanded && <span>Library</span>}
         </button>
 
-        {expanded && <div className="nav-title" style={{marginTop:'.6rem'}}>Spells</div>}
+        <div className="nav-title" style={{marginTop:'.6rem'}}>Spell</div>
         <button className={`nav-btn ${section === "spell-new" ? "nav-active" : ""}`} onClick={()=>onSelect("spell-new")} title="New Spell">
           <IconWand />{expanded && <span>New</span>}
         </button>
@@ -96,8 +90,15 @@ export default function Sidebar({
           <IconLibrary />{expanded && <span>Library</span>}
         </button>
       </nav>
+      <hr className="sidebar-sep" />
+      <div className="sidebar-status">
+        <span className={`status-pill ${apiOk ? "status-ok" : apiOk === false ? "status-down" : ""}`}>
+          <span className="dot" />
+          {expanded && (apiOk === null ? "Checking" : apiOk ? "Online" : "Offline")}
+        </span>
+      </div>
       <div style={{marginTop:'auto'}}>
-        {expanded && <div className="nav-title" style={{marginTop:'.6rem'}}>Engine</div>}
+        <div className="nav-title" style={{marginTop:'.6rem'}}>Engine</div>
         <div className="engine-toggle" onClick={()=>setEngine(engine==='google'?'local':'google')} title="Toggle inference engine">
           <div className={`knob ${engine==='local'?'right':''}`}></div>
           {expanded && <span className="label-left">Google</span>}

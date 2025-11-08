@@ -34,7 +34,7 @@ export default function PickersPanel({
           <input type="number" min={1} max={20} value={level} onChange={(e)=>setLevel(Math.max(1, Math.min(20, Number(e.target.value)||1)))} className="glass-input" style={{width:'5.5rem'}} />
         </div>
       </div>
-      <div style={{display:'grid', gridTemplateColumns:'repeat(2,minmax(0,1fr))', gap:'.75rem', columnGap:'1rem'}}>
+      <div className="flex-scroll" style={{display:'grid', gridTemplateColumns:'repeat(2,minmax(0,1fr))', gap:'.75rem', columnGap:'1rem'}}>
         <div>
           <label className="block text-sm mb-1">Class</label>
           <select className="glass-input" value={selectedClass} onChange={(e)=>setSelectedClass(e.target.value)}>

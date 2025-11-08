@@ -11,6 +11,7 @@ import {
 } from "./api";
 import type { APIRef } from "./types";
 import GlassCard from "./components/GlassCard";
+import { Tabs } from "./components/Tabs";
 // tabs removed in favor of sidebar
 import PickersPanel from "./components/PickersPanel";
 import AbilitiesPanel from "./components/AbilitiesPanel";
@@ -24,8 +25,10 @@ import SpellPreview from "./components/SpellPreview";
 import CharLibraryTable from "./components/CharLibraryTable";
 import ItemLibraryTable from "./components/ItemLibraryTable";
 import SpellLibraryTable from "./components/SpellLibraryTable";
+// Progression library is now integrated with character save
 import { generatePortrait, downloadPDF, generateMagicItem, saveMagicItem, listMagicItems, getMagicItem, deleteMagicItem, type MagicItem, generateSpell, saveSpell, listSpells, getSpell, deleteSpell, type Spell } from "./api";
 import Sidebar from "./components/Sidebar";
+import ProgressionPanel from "./components/ProgressionPanel";
 
 // Class ability priorities (indices from dnd5eapi)
 const CLASS_PRIORITIES: Record<string, Ability[]> = {
@@ -75,7 +78,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [portraitBase64, setPortraitBase64] = useState<string | null>(null);
   const [portraitUrl, setPortraitUrl] = useState<string | null>(null);
-  // Nav section
+  // Nav section (progression integrated into character flow)
   type Section = "char-new" | "char-lib" | "item-new" | "item-lib" | "spell-new" | "spell-lib";
   const [section, setSection] = useState<Section>("char-new");
 
@@ -113,10 +116,13 @@ export default function App() {
   const [spellTotal, setSpellTotal] = useState(0);
   const [spellSearch, setSpellSearch] = useState("");
   const [spellSort, setSpellSort] = useState("created_desc");
+  const [progPlan, setProgPlan] = useState<import('./api').ProgressionPlan | null>(null);
 
   const [classMap, setClassMap] = useState<Record<string,string>>({});
   const [raceMap, setRaceMap]   = useState<Record<string,string>>({});
   const [bgMap, setBgMap]       = useState<Record<string,string>>({});
+  // creation left-panel tabs
+  const [createTab, setCreateTab] = useState<'pick'|'prog'|'story'>("pick");
 
   function withName(d: CharacterDraft): CharacterDraft {
     const cleaned = charName.trim();
@@ -127,7 +133,7 @@ export default function App() {
     if (!draft) return;
     const namedDraft = withName(draft);
     setDraft(namedDraft);
-    const res = await saveToLibrary(namedDraft, backstory, portraitBase64 ?? null);
+    const res = await saveToLibrary(namedDraft, backstory, portraitBase64 ?? null, progPlan ?? null);
     // refresh list after save
     await doListLib();
     // notify via toast if available (provider installed)
@@ -152,6 +158,7 @@ export default function App() {
     };
     setDraft(loadedDraft);
     setBackstory(res.backstory);
+    setProgPlan((res as any).progression ?? null);
     setCharName(loadedDraft.name ?? "");
     if (res.portrait_base64) {
       setPortraitBase64(res.portrait_base64);
@@ -188,6 +195,8 @@ export default function App() {
   async function doLoadSpell(id:number){ const res = await getSpell(id); setSpell(res.spell); }
   async function doDeleteSpell(id:number){ await deleteSpell(id); await doListSpellLib(); }
 
+  // progression is attached to character draft now; no separate library
+
 
   useEffect(() => {
     fetch(`http://localhost:${import.meta.env.VITE_API_PORT ?? 8000}/health`)
@@ -218,6 +227,7 @@ export default function App() {
     if (section === "char-lib") doListLib();
     if (section === "item-lib") doListItemLib();
     if (section === "spell-lib") doListSpellLib();
+    // progression library removed
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [section]);
 
@@ -235,6 +245,7 @@ export default function App() {
   useEffect(() => {
     if (section !== 'spell-lib') return; const t = setTimeout(()=>{ doListSpellLib(); updateUrl(); }, 300); return ()=>clearTimeout(t);
   }, [spellPage, spellSearch, spellSort]);
+  // removed: progression library debounce
 
   // URL state (section, pages, search, sort)
   useEffect(() => {
@@ -250,10 +261,12 @@ export default function App() {
     const sp = Number(p.get('sp')||'1'); if (sp) setSpellPage(sp);
     const ss = p.get('ss')||''; if (ss) setSpellSearch(ss);
     const so = p.get('so')||''; if (so) setSpellSort(so as any);
+    // progression list params removed
     // initial lists
     if (sec === 'char-lib') doListLib();
     if (sec === 'item-lib') doListItemLib();
     if (sec === 'spell-lib') doListSpellLib();
+    // no progression library
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -263,6 +276,7 @@ export default function App() {
     p.set('cp', String(charPage)); p.set('cs', charSearch); p.set('co', charSort);
     p.set('ip', String(itemPage)); p.set('is', itemSearch); p.set('io', itemSort);
     p.set('sp', String(spellPage)); p.set('ss', spellSearch); p.set('so', spellSort);
+    // progression list params removed
     history.replaceState(null, '', `${location.pathname}?${p.toString()}`);
   }
 
@@ -410,73 +424,100 @@ export default function App() {
       <Sidebar expanded={navExpanded} setExpanded={setNavExpanded} section={section} onSelect={setSection} apiOk={apiOk} engine={engine} setEngine={setEngine} />
       <div className="p-6 flex-1">
         {section === "char-new" && (
-          <div className="grid gap-6 md:grid-cols-2">
-            <GlassCard>
-                <h2 className="text-xl font-semibold mb-3">Pick Class, Race, Background</h2>
-                <PickersPanel
-                  classes={classes}
-                  races={races}
-                  backgrounds={backgrounds}
-                  selectedClass={selectedClass}
-                  selectedRace={selectedRace}
-                  selectedBackground={selectedBackground}
-                  setSelectedClass={setSelectedClass}
-                  setSelectedRace={setSelectedRace}
-                  setSelectedBackground={setSelectedBackground}
-                  seed={seed}
-                  setSeed={setSeed}
-                  canRoll={canRoll}
-                  doRoll={doRoll}
-                  level={level}
-                  setLevel={(n)=>setLevel(n)}
-                  onQuickNPC={doQuickNPC}
+          <div className="grid gap-6 md:grid-cols-2 fill-grid">
+            <div className="card-flex">
+              <GlassCard className="mb-3">
+                <Tabs
+                  tabs={[{key:'pick',label:'Pick & Abilities'},{key:'prog',label:'Progression'},{key:'story',label:'Backstory'}]}
+                  active={createTab}
+                  onChange={(k)=>setCreateTab(k as any)}
                 />
               </GlassCard>
+              <div className="flex-scroll">
+                {createTab === 'pick' && (
+                  <div className="grid gap-6">
+                    <GlassCard>
+                      <h2 className="text-xl font-semibold mb-2">Pick Class, Race, Background</h2>
+                      <PickersPanel
+                        classes={classes}
+                        races={races}
+                        backgrounds={backgrounds}
+                        selectedClass={selectedClass}
+                        selectedRace={selectedRace}
+                        selectedBackground={selectedBackground}
+                        setSelectedClass={setSelectedClass}
+                        setSelectedRace={setSelectedRace}
+                        setSelectedBackground={setSelectedBackground}
+                        seed={seed}
+                        setSeed={setSeed}
+                        canRoll={canRoll}
+                        doRoll={doRoll}
+                        level={level}
+                        setLevel={(n)=>setLevel(n)}
+                        onQuickNPC={doQuickNPC}
+                      />
+                    </GlassCard>
+                    <GlassCard>
+                      <h2 className="text-xl font-semibold mb-2">Ability Scores</h2>
+                      <AbilitiesPanel
+                        abilities={abilities}
+                        assignment={assignment}
+                        setAssignment={setAssignment}
+                        canGenerate={canGenerate}
+                        busy={busy}
+                        doGenerate={doGenerate}
+                      />
+                    </GlassCard>
+                  </div>
+                )}
+                {createTab === 'prog' && (
+                  <div>
+                    {/* ProgressionPanel already includes its own frosted GlassCard */}
+                    <ProgressionPanel draft={draft} classIndex={selectedClass || null} plan={progPlan} setPlan={setProgPlan} />
+                  </div>
+                )}
+                {createTab === 'story' && (
+                  <div style={{height:'100%'}}>
+                    <GlassCard className="fill-card">
+                      <h2 className="text-xl font-semibold mb-2">Backstory</h2>
+                      <BackstoryPanel
+                        draft={draft}
+                        tone={tone}
+                        setTone={setTone}
+                        lengthOpt={lengthOpt}
+                        setLengthOpt={setLengthOpt}
+                        includeHooks={includeHooks}
+                        setIncludeHooks={setIncludeHooks}
+                        busyBS={busyBS}
+                        doBackstory={doBackstory}
+                        backstory={backstory}
+                      />
+                    </GlassCard>
+                  </div>
+                )}
+              </div>
+            </div>
             <GlassCard>
-                <h2 className="text-xl font-semibold mb-3">Ability Scores</h2>
-                <AbilitiesPanel
-                  abilities={abilities}
-                  assignment={assignment}
-                  setAssignment={setAssignment}
-                  canGenerate={canGenerate}
-                  busy={busy}
-                  doGenerate={doGenerate}
-                />
-            </GlassCard>
-            <GlassCard>
-                <h2 className="text-xl font-semibold mb-3">Backstory</h2>
-                <BackstoryPanel
-                  draft={draft}
-                  tone={tone}
-                  setTone={setTone}
-                  lengthOpt={lengthOpt}
-                  setLengthOpt={setLengthOpt}
-                  includeHooks={includeHooks}
-                  setIncludeHooks={setIncludeHooks}
-                  busyBS={busyBS}
-                  doBackstory={doBackstory}
-                  backstory={backstory}
-                />
-            </GlassCard>
-            <GlassCard>
-                <h2 className="text-xl font-semibold mb-3">Draft Sheet</h2>
-                {!draft ? (
-                  <p className="text-slate-300">No draft yet.</p>
-                ) : (
+              <h2 className="text-xl font-semibold mb-3">Draft Sheet</h2>
+              {!draft ? (
+                <p className="text-slate-300">No draft yet.</p>
+              ) : (
+                <GlassCard>
                   <DraftPanel
                     draft={withName(draft)}
                     backstory={backstory}
                     charName={charName}
                     setCharName={setCharName}
-                    downloadJSON={downloadJSON}
-                    downloadMarkdown={downloadMarkdown}
+                    downloadJSON={(d,b)=>downloadJSON(d,b,progPlan)}
+                    downloadMarkdown={(d,b)=>downloadMarkdown(d,b,progPlan)}
                     doSave={doSave}
                     portraitUrl={portraitUrl}
                     onGeneratePortrait={doPortrait}
-                    onDownloadPDF={()=>downloadPDF(withName(draft), backstory, portraitBase64)}
+                    onDownloadPDF={()=>downloadPDF(withName(draft), backstory, portraitBase64, progPlan)}
                   />
-                )}
-              </GlassCard>
+                </GlassCard>
+              )}
+            </GlassCard>
           </div>
         )}
 
@@ -514,12 +555,12 @@ export default function App() {
                   backstory={backstory}
                   charName={charName}
                   setCharName={setCharName}
-                  downloadJSON={downloadJSON}
-                  downloadMarkdown={downloadMarkdown}
+                  downloadJSON={(d,b)=>downloadJSON(d,b,progPlan)}
+                  downloadMarkdown={(d,b)=>downloadMarkdown(d,b,progPlan)}
                   doSave={doSave}
                   portraitUrl={portraitUrl}
                   onGeneratePortrait={doPortrait}
-                  onDownloadPDF={()=>downloadPDF(withName(draft), backstory, portraitBase64)}
+                  onDownloadPDF={()=>downloadPDF(withName(draft), backstory, portraitBase64, progPlan)}
                 />
               )}
             </GlassCard>
@@ -542,6 +583,7 @@ export default function App() {
             </GlassCard>
           </div>
         )}
+        {/* Removed standalone progression sections; integrated above */}
         {section === "item-lib" && (
           <div className="grid gap-6 md:grid-cols-1">
             <GlassCard>

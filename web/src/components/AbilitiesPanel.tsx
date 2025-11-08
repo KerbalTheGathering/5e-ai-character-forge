@@ -19,7 +19,7 @@ export default function AbilitiesPanel({
       {!abilities ? <p className="text-slate-300">No rolls yet.</p> : (
         <>
           <div className="text-sm text-slate-300 mb-2">Sorted (high→low): {abilities.scores.join(", ")}</div>
-          <div className="grid gap-2" style={{gridTemplateColumns:"repeat(2,minmax(0,1fr))", columnGap: "2rem"}}>
+          <div className="grid gap-2 flex-scroll" style={{gridTemplateColumns:"repeat(2,minmax(0,1fr))", columnGap: "2rem"}}>
             {ABILS.map((ab, i)=>(
               <div key={ab} className="ability-row">
                 <select

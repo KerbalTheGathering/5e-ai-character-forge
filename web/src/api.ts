@@ -106,11 +106,11 @@ export async function generateBackstory(body: BackstoryInput, engine: 'google'|'
   return res.json() as Promise<BackstoryResult>;
 }
 
-export async function downloadJSON(draft: CharacterDraft, backstory?: BackstoryResult | null) {
+export async function downloadJSON(draft: CharacterDraft, backstory?: BackstoryResult | null, progression?: ProgressionPlan | null) {
   const res = await fetch(`http://localhost:${import.meta.env.VITE_API_PORT ?? 8000}/api/export/json`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ draft, backstory: backstory ?? null }),
+    body: JSON.stringify({ draft, backstory: backstory ?? null, progression: progression ?? null }),
   });
   if (!res.ok) throw new Error(`export json failed: ${res.status}`);
   const blob = await res.blob();
@@ -123,11 +123,11 @@ export async function downloadJSON(draft: CharacterDraft, backstory?: BackstoryR
   document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
 }
 
-export async function downloadMarkdown(draft: CharacterDraft, backstory?: BackstoryResult | null) {
+export async function downloadMarkdown(draft: CharacterDraft, backstory?: BackstoryResult | null, progression?: ProgressionPlan | null) {
   const res = await fetch(`http://localhost:${import.meta.env.VITE_API_PORT ?? 8000}/api/export/md`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ draft, backstory: backstory ?? null }),
+    body: JSON.stringify({ draft, backstory: backstory ?? null, progression: progression ?? null }),
   });
   if (!res.ok) throw new Error(`export md failed: ${res.status}`);
   const text = await res.text();
@@ -140,11 +140,11 @@ export async function downloadMarkdown(draft: CharacterDraft, backstory?: Backst
   document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
 }
 
-export async function saveToLibrary(draft: CharacterDraft, backstory?: BackstoryResult | null, portrait_base64?: string | null) {
+export async function saveToLibrary(draft: CharacterDraft, backstory?: BackstoryResult | null, portrait_base64?: string | null, progression?: ProgressionPlan | null) {
   const res = await fetch(`http://localhost:${import.meta.env.VITE_API_PORT ?? 8000}/api/library/save`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ draft, backstory: backstory ?? null, portrait_base64: portrait_base64 ?? null }),
+    body: JSON.stringify({ draft, backstory: backstory ?? null, portrait_base64: portrait_base64 ?? null, progression: progression ?? null }),
   });
   if (!res.ok) throw new Error(`save failed: ${res.status}`);
   return res.json() as Promise<{ id:number; name:string; created_at:string }>;
@@ -161,7 +161,7 @@ export async function listLibrary(limit = 10, page = 1, search: string = "", sor
 export async function getLibraryItem(id: number) {
   const res = await fetch(`http://localhost:${import.meta.env.VITE_API_PORT ?? 8000}/api/library/get/${id}`);
   if (!res.ok) throw new Error(`get failed: ${res.status}`);
-  return res.json() as Promise<{ id:number; name:string; created_at:string; draft: CharacterDraft; backstory: BackstoryResult | null; portrait_base64?: string | null }>;
+  return res.json() as Promise<{ id:number; name:string; created_at:string; draft: CharacterDraft; backstory: BackstoryResult | null; progression?: ProgressionPlan | null; portrait_base64?: string | null }>;
 }
 
 export async function deleteLibraryItem(id: number) {
@@ -338,11 +338,11 @@ export async function generatePortrait(draft: CharacterDraft, backstory?: Backst
   return res.blob();
 }
 
-export async function downloadPDF(draft: CharacterDraft, backstory?: BackstoryResult | null, portrait_base64?: string | null) {
+export async function downloadPDF(draft: CharacterDraft, backstory?: BackstoryResult | null, portrait_base64?: string | null, progression?: ProgressionPlan | null) {
   const res = await fetch(`http://localhost:${import.meta.env.VITE_API_PORT ?? 8000}/api/export/pdf`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ draft, backstory: backstory ?? null, portrait_base64: portrait_base64 ?? null }),
+    body: JSON.stringify({ draft, backstory: backstory ?? null, portrait_base64: portrait_base64 ?? null, progression: progression ?? null }),
   });
   if (!res.ok) throw new Error(`export pdf failed: ${res.status}`);
   const blob = await res.blob();
@@ -351,5 +351,91 @@ export async function downloadPDF(draft: CharacterDraft, backstory?: BackstoryRe
   a.href = url;
   const cd = res.headers.get("Content-Disposition");
   a.download = cd?.match(/filename="(.+?)"/)?.[1] ?? "character.pdf";
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+}
+
+// --- Progression Planner ---
+
+export interface LevelPick {
+  level: number;
+  hp_gain?: number | null;
+  features: string[];
+  subclass?: string | null;
+  asi?: string | null;
+  spells_known: string[];
+  prepared: string[];
+  notes?: string | null;
+}
+
+export interface ProgressionPlan {
+  name?: string | null;
+  class_index: string;
+  target_level: number;
+  picks: LevelPick[];
+  notes_markdown: string;
+}
+
+export interface ProgressionInput {
+  class_index: string;
+  target_level: number;
+  allow_feats?: boolean;
+  style?: 'martial'|'caster'|'face'|'balanced';
+  draft: CharacterDraft;
+}
+
+export async function generateProgression(input: ProgressionInput): Promise<ProgressionPlan> {
+  const res = await fetch(`${API}/api/progression/generate`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input)
+  });
+  if (!res.ok) throw new Error(`progression generate failed: ${res.status}`);
+  return res.json() as Promise<ProgressionPlan>;
+}
+
+export async function downloadProgressionMarkdown(plan: ProgressionPlan) {
+  const res = await fetch(`${API}/api/progression/export/md`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan })
+  });
+  if (!res.ok) throw new Error(`progression export md failed: ${res.status}`);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = (res.headers.get('Content-Disposition')?.match(/filename="(.+?)"/)?.[1] ?? 'progression.md');
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+}
+
+export async function saveProgression(plan: ProgressionPlan) {
+  const res = await fetch(`${API}/api/progression/save`, { method:'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan }) });
+  if (!res.ok) throw new Error(`progression save failed: ${res.status}`);
+  return res.json() as Promise<{ id:number; name:string; created_at:string }>;
+}
+
+export async function listProgressions(limit=10, page=1, search='', sort='created_desc') {
+  const q = new URLSearchParams({ limit:String(limit), page:String(page), sort }); if (search) q.set('search', search);
+  const res = await fetch(`${API}/api/progression/list?${q.toString()}`);
+  if (!res.ok) throw new Error(`progression list failed: ${res.status}`);
+  return res.json() as Promise<{ items:{id:number; name:string; created_at:string}[], total:number }>;
+}
+
+export async function getProgression(id:number) {
+  const res = await fetch(`${API}/api/progression/get/${id}`);
+  if (!res.ok) throw new Error(`progression get failed: ${res.status}`);
+  return res.json() as Promise<{ id:number; name:string; created_at:string; plan: ProgressionPlan }>;
+}
+
+export async function deleteProgression(id:number) {
+  const res = await fetch(`${API}/api/progression/delete/${id}`, { method:'DELETE' });
+  if (!res.ok) throw new Error(`progression delete failed: ${res.status}`);
+  return res.json() as Promise<{ ok:true }>;
+}
+
+export async function downloadProgressionPDF(plan: ProgressionPlan) {
+  const res = await fetch(`${API}/api/progression/export/pdf`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan })
+  });
+  if (!res.ok) throw new Error(`progression export pdf failed: ${res.status}`);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = (res.headers.get('Content-Disposition')?.match(/filename="(.+?)"/)?.[1] ?? 'progression.pdf');
   document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
 }

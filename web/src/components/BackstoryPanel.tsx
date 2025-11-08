@@ -19,8 +19,8 @@ export default function BackstoryPanel({
   backstory: BackstoryResult | null;
 }){
   return (
-    // Ensure button row aligns with adjacent cards (e.g., Draft panel)
-    <div className="card-flex" style={{ minHeight: 320 }}>
+    // Fill parent card height so actions sit at bottom to align with Draft sheet
+    <div className="card-flex" style={{ height: '100%' }}>
       {!draft ? <p className="text-slate-300">Generate a draft first.</p> : (
         <>
           <div className="grid gap-2" style={{gridTemplateColumns:"repeat(3,minmax(0,1fr))"}}>
@@ -44,7 +44,7 @@ export default function BackstoryPanel({
             </div>
           </div>
           {backstory && (
-            <div className="mt-4 text-sm scroll-area flex-scroll">
+            <div className="mt-4 text-sm flex-scroll" style={{ paddingRight: '.5rem' }}>
               <div className="mb-2"><strong>Summary:</strong> {backstory.summary}</div>
               <div className="mb-2"><strong>Traits:</strong> {backstory.traits.join(", ")}</div>
               <div className="mb-2"><strong>Ideals:</strong> {backstory.ideals.join(", ")}</div>

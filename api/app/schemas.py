@@ -72,13 +72,19 @@ class BackstoryResult(BaseModel):
 class ExportInput(BaseModel):
     draft: CharacterDraft
     backstory: Optional[BackstoryResult] = None
+    # Optional progression plan to augment exports (MD/JSON)
+    progression: Optional["ProgressionPlan"] = None
 
 # ---------- Portrait & PDF ----------
 class SaveInput(ExportInput):
     portrait_base64: Optional[str] = None  # PNG base64 (no data URL prefix)
+    # Attach an optional progression plan to the character
+    progression: Optional["ProgressionPlan"] = None
 
 class ExportPDFInput(ExportInput):
     portrait_base64: Optional[str] = None
+    # Include optional progression plan in the PDF
+    progression: Optional["ProgressionPlan"] = None
 
 # ---------- Magic Items ----------
 class MagicItemInput(BaseModel):
@@ -130,3 +136,32 @@ class Spell(BaseModel):
 
 class SpellExport(BaseModel):
     spell: Spell
+
+# ---------- Progression Planner ----------
+class LevelPick(BaseModel):
+    level: int
+    hp_gain: int | None = None
+    features: list[str] = []
+    subclass: str | None = None
+    asi: str | None = None  # e.g., "+2 STR" or feat name
+    spells_known: list[str] = []
+    prepared: list[str] = []
+    notes: str | None = None
+
+class ProgressionInput(BaseModel):
+    # Class index is needed to query SRD levels (e.g., "wizard")
+    class_index: str
+    target_level: int = 1
+    allow_feats: bool = False
+    style: Literal["martial","caster","face","balanced"] = "balanced"
+    draft: CharacterDraft
+
+class ProgressionPlan(BaseModel):
+    name: str | None = None
+    class_index: str
+    target_level: int
+    picks: list[LevelPick]
+    notes_markdown: str = ""
+
+class ProgressionExport(BaseModel):
+    plan: ProgressionPlan

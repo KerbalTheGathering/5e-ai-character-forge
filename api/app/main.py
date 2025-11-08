@@ -24,7 +24,8 @@ from .schemas import (
     AbilitySet, GenerateInput, CharacterDraft, AbilityBlock, Proficiency,
     BackstoryInput, BackstoryResult, ExportInput, SaveInput, ExportPDFInput,
     MagicItemInput, MagicItem, MagicItemExport,
-    SpellInput, Spell, SpellExport
+    SpellInput, Spell, SpellExport,
+    LevelPick, ProgressionInput, ProgressionPlan, ProgressionExport
 )
 import google.generativeai as genai  # for text backstory
 # New SDK for image generation
@@ -77,12 +78,19 @@ def init_db():
       created_at TEXT NOT NULL,
       draft_json TEXT NOT NULL,
       backstory_json TEXT,
-      portrait_png BLOB
+      portrait_png BLOB,
+      progression_json TEXT
     )
     """)
     # ensure portrait column exists for older DBs
     try:
         con.execute("ALTER TABLE library ADD COLUMN portrait_png BLOB")
+        con.commit()
+    except Exception:
+        pass
+    # ensure progression column exists for older DBs
+    try:
+        con.execute("ALTER TABLE library ADD COLUMN progression_json TEXT")
         con.commit()
     except Exception:
         pass
@@ -103,6 +111,16 @@ def init_db():
       name TEXT,
       created_at TEXT NOT NULL,
       spell_json TEXT NOT NULL,
+      prompt TEXT
+    )
+    """)
+    # Progression plans library
+    con.execute("""
+    CREATE TABLE IF NOT EXISTS progression_library (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT,
+      created_at TEXT NOT NULL,
+      plan_json TEXT NOT NULL,
       prompt TEXT
     )
     """)
@@ -319,6 +337,42 @@ def markdown_from_draft(d: CharacterDraft, bs: BackstoryResult | None = None) ->
         lines.append(f"- **Flaws:** {', '.join(bs.flaws) or '—'}")
         if bs.hooks:
             lines.append(f"- **Hooks:** {', '.join(bs.hooks)}")
+    return "\n".join(lines)
+
+def markdown_from_progression(plan: ProgressionPlan, draft: CharacterDraft | None = None) -> str:
+    lines: list[str] = []
+    title = plan.name or (draft.name if draft and draft.name else None) or "Progression Plan"
+    lines.append(f"# {title}")
+    cls_name = draft.cls if draft else plan.class_index.title()
+    lines.append("")
+    lines.append(f"- Class: {cls_name}")
+    if draft:
+        lines.append(f"- Ancestry/Background: {draft.race} · {draft.background}")
+    lines.append(f"- Target Level: {plan.target_level}")
+    lines.append("")
+    lines.append("## Level-by-Level")
+    for p in plan.picks:
+        hdr = f"### Level {p.level}"
+        if p.subclass:
+            hdr += f" — Subclass: {p.subclass}"
+        lines.append(hdr)
+        feats = ", ".join(p.features) if p.features else "—"
+        lines.append(f"- Features: {feats}")
+        if p.asi:
+            lines.append(f"- ASI/Feat: {p.asi}")
+        if p.spells_known:
+            lines.append(f"- Spells Known: {', '.join(p.spells_known)}")
+        if p.prepared:
+            lines.append(f"- Prepared: {', '.join(p.prepared)}")
+        if p.hp_gain is not None:
+            lines.append(f"- HP Gain: {p.hp_gain}")
+        if p.notes:
+            lines.append("")
+            lines.append(p.notes)
+        lines.append("")
+    if plan.notes_markdown:
+        lines.append("## Notes")
+        lines.append(plan.notes_markdown)
     return "\n".join(lines)
 
 @app.get("/health")
@@ -733,7 +787,11 @@ async def generate_portrait(payload: ExportInput, engine: str | None = Query(def
 @app.post("/api/export/json")
 async def export_json(payload: ExportInput):
     logger.debug("export_json: name=%s class=%s race=%s", payload.draft.name, payload.draft.cls, payload.draft.race)
-    data = {"draft": payload.draft.model_dump(), "backstory": payload.backstory.model_dump() if payload.backstory else None}
+    data = {
+        "draft": payload.draft.model_dump(),
+        "backstory": payload.backstory.model_dump() if payload.backstory else None,
+        "progression": payload.progression.model_dump() if getattr(payload, 'progression', None) else None,
+    }
     filename = f"{payload.draft.race}_{payload.draft.cls}_lvl{payload.draft.level}.json".replace(" ", "_")
     headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
     return JSONResponse(content=data, headers=headers)
@@ -741,7 +799,49 @@ async def export_json(payload: ExportInput):
 @app.post("/api/export/md")
 async def export_md(payload: ExportInput):
     logger.debug("export_md: name=%s class=%s race=%s", payload.draft.name, payload.draft.cls, payload.draft.race)
-    md = markdown_from_draft(payload.draft, payload.backstory)
+    # Base markdown for draft and optional backstory
+    parts: list[str] = [markdown_from_draft(payload.draft, payload.backstory)]
+    # Append progression section if provided
+    plan = getattr(payload, 'progression', None)
+    if plan is not None:
+        try:
+            # Render a section without an extra top-level title
+            lines: list[str] = []
+            title = plan.name or "Progression Plan"
+            lines.append("")
+            lines.append("## Progression Plan")
+            lines.append("")
+            lines.append(f"- Title: {title}")
+            lines.append(f"- Class: {payload.draft.cls}")
+            lines.append(f"- Target Level: {plan.target_level}")
+            lines.append("")
+            lines.append("### Level-by-Level")
+            for p in plan.picks:
+                hdr = f"#### Level {p.level}"
+                if p.subclass:
+                    hdr += f" — Subclass: {p.subclass}"
+                lines.append(hdr)
+                feats = ", ".join(p.features) if (p.features or []) else "—"
+                lines.append(f"- Features: {feats}")
+                if p.asi:
+                    lines.append(f"- ASI/Feat: {p.asi}")
+                if p.spells_known:
+                    lines.append(f"- Spells Known: {', '.join(p.spells_known)}")
+                if p.prepared:
+                    lines.append(f"- Prepared: {', '.join(p.prepared)}")
+                if p.hp_gain is not None:
+                    lines.append(f"- HP Gain: {p.hp_gain}")
+                if p.notes:
+                    lines.append("")
+                    lines.append(p.notes)
+                lines.append("")
+            if plan.notes_markdown:
+                lines.append("### Notes")
+                lines.append(plan.notes_markdown)
+            parts.append("\n".join(lines))
+        except Exception as e:
+            logger.warning("progression md render failed: %s", e)
+    md = "\n\n".join(parts)
     filename = f"{payload.draft.race}_{payload.draft.cls}_lvl{payload.draft.level}.md".replace(" ", "_")
     return PlainTextResponse(content=md, media_type="text/markdown", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
@@ -761,9 +861,16 @@ async def library_save(payload: SaveInput):
             portrait_blob = base64.b64decode(payload.portrait_base64)
         except Exception:
             portrait_blob = None
+    # progression serialized (if provided)
+    progression_json = None
+    try:
+      progression_json = payload.progression.model_dump_json() if getattr(payload, 'progression', None) else None
+    except Exception:
+      progression_json = None
+
     cur.execute(
-        "INSERT INTO library (name, created_at, draft_json, backstory_json, portrait_png) VALUES (?, ?, ?, ?, ?)",
-        (name, created_at, payload.draft.model_dump_json(), payload.backstory.model_dump_json() if payload.backstory else None, portrait_blob)
+        "INSERT INTO library (name, created_at, draft_json, backstory_json, portrait_png, progression_json) VALUES (?, ?, ?, ?, ?, ?)",
+        (name, created_at, payload.draft.model_dump_json(), payload.backstory.model_dump_json() if payload.backstory else None, portrait_blob, progression_json)
     )
     con.commit()
     new_id = cur.lastrowid
@@ -955,6 +1062,231 @@ async def spells_delete(spell_id: int):
     con = db(); cur = con.cursor(); cur.execute("DELETE FROM spell_library WHERE id=?", (spell_id,)); con.commit(); ok = cur.rowcount; con.close();
     if not ok: raise HTTPException(404, "Not found"); return {"ok": True}
 
+# ---- Progression Planner ----
+
+# Subclass unlock levels per 5e 2014 SRD core classes
+SUBCLASS_LEVELS: dict[str, int] = {
+    "barbarian": 3, "bard": 3, "cleric": 1, "druid": 2, "fighter": 3,
+    "monk": 3, "paladin": 3, "ranger": 3, "rogue": 3, "sorcerer": 1,
+    "warlock": 1, "wizard": 2,
+}
+
+# ASI levels per class (defaults; fighter/rogue have extras)
+ASI_LEVELS_DEFAULT = [4, 8, 12, 16, 19]
+ASI_LEVELS_OVERRIDES: dict[str, list[int]] = {
+    "fighter": [4, 6, 8, 12, 14, 16, 19],
+    "rogue": [4, 8, 10, 12, 16, 19],
+}
+
+@app.post("/api/progression/generate", response_model=ProgressionPlan)
+async def progression_generate(payload: ProgressionInput):
+    ci = payload.class_index.lower().strip()
+    if not ci:
+        raise HTTPException(400, "class_index required")
+    target = max(1, min(20, payload.target_level))
+    d = payload.draft
+
+    # Hit points: level 1 = hit_die + CON_mod; later = avg (half+1) + CON_mod
+    avg_hp = (d.hit_die // 2) + 1
+    picks: list[LevelPick] = []
+
+    # Determine subclass list and name choice
+    try:
+        cls_data = await fetch_json(f"{RULES_BASE}/{RULES_API_PREFIX}/classes/{ci}")
+        subclasses = [x.get("name") for x in cls_data.get("subclasses", []) or []]
+    except Exception:
+        subclasses = []
+    chosen_subclass = subclasses[0] if subclasses else None
+    subclass_level = SUBCLASS_LEVELS.get(ci, 3)
+
+    # ASI schedule
+    asi_levels = ASI_LEVELS_OVERRIDES.get(ci, ASI_LEVELS_DEFAULT)
+
+    for lvl in range(1, target + 1):
+        # Level features from SRD
+        try:
+            lvl_data = await fetch_json(f"{RULES_BASE}/{RULES_API_PREFIX}/classes/{ci}/levels/{lvl}")
+            feat_names = [f.get("name") for f in lvl_data.get("features", []) or []]
+        except Exception:
+            feat_names = []
+
+        # hp gain this level
+        if lvl == 1:
+            hp_gain = d.hit_die + d.abilities.CON_mod
+        else:
+            hp_gain = avg_hp + d.abilities.CON_mod
+
+        # subclass applied?
+        sc = chosen_subclass if (chosen_subclass and lvl == subclass_level) else None
+
+        # ASI placeholder
+        asi = "+2 to primary ability" if lvl in asi_levels else None
+
+        notes = None
+        if sc:
+            notes = f"Chose subclass: {sc}."
+        pick = LevelPick(level=lvl, hp_gain=hp_gain, features=feat_names, subclass=sc, asi=asi, spells_known=[], prepared=[], notes=notes)
+        picks.append(pick)
+
+    plan = ProgressionPlan(
+        name=d.name or f"{d.race} {d.cls} progression",
+        class_index=ci,
+        target_level=target,
+        picks=picks,
+        notes_markdown=(
+            "This is an initial, rules-aware skeleton plan.\n\n"
+            "• Features pulled from SRD per level.\n\n"
+            "• Subclass chosen automatically if available; adjust as desired.\n\n"
+            "• ASI/feat choices are placeholders.\n"
+        ),
+    )
+    return plan
+
+@app.post("/api/progression/export/md")
+async def progression_export_md(payload: ProgressionExport):
+    md = markdown_from_progression(payload.plan)
+    fname = (payload.plan.name or "progression").replace(" ", "_") + ".md"
+    return PlainTextResponse(content=md, media_type="text/markdown", headers={"Content-Disposition": f'attachment; filename="{fname}"'})
+
+@app.post("/api/progression/export/pdf")
+async def progression_export_pdf(payload: ProgressionExport):
+    try:
+        from reportlab.lib.pagesizes import letter
+        from reportlab.lib.units import inch
+        from reportlab.pdfgen import canvas
+    except Exception as e:
+        raise HTTPException(500, f"PDF generation libs missing: {e}")
+
+    plan = payload.plan
+    buffer = BytesIO()
+    c = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
+
+    margin = 0.75*inch
+    content_width = width - 2*margin
+
+    def draw_footer():
+        try:
+            now = __import__('datetime').datetime.utcnow().strftime('%Y-%m-%d')
+        except Exception:
+            now = ''
+        c.setFont("Helvetica", 9)
+        c.drawRightString(width - margin, margin * 0.6, f"Page {c.getPageNumber()}  •  Generated {now}")
+
+    def wrap_text(text: str, max_width: float, font: str = "Helvetica", size: int = 10):
+        c.setFont(font, size)
+        words = text.split()
+        lines: list[str] = []
+        line = ""
+        for w in words:
+            test = (line + (" " if line else "") + w)
+            if c.stringWidth(test, font, size) <= max_width:
+                line = test
+            else:
+                if line:
+                    lines.append(line)
+                line = w
+        if line:
+            lines.append(line)
+        return lines
+
+    def draw_block(x: float, y_top: float, text_lines: list[str], width_avail: float, leading: float = 14, font: str = "Helvetica", size: int = 10):
+        c.setFont(font, size)
+        y = y_top
+        for raw in text_lines:
+            for ln in wrap_text(raw, width_avail, font, size):
+                if y <= margin:
+                    draw_footer(); c.showPage()
+                    draw_title(title)
+                    y = height - margin - 0.25*inch
+                    c.setFont(font, size)
+                c.drawString(x, y, ln)
+                y -= leading
+        return y
+
+    def draw_title(text: str):
+        c.setFont("Helvetica-Bold", 18)
+        c.drawString(margin, height - margin + 0.1*inch, text)
+
+    title = (plan.name or "Progression Plan")
+    draw_title(title)
+    y = height - margin - 0.35*inch
+
+    # Summary
+    summary = [
+        f"Class: {plan.class_index.title()}",
+        f"Target Level: {plan.target_level}",
+    ]
+    y = draw_block(margin, y, summary, content_width, leading=13)
+
+    # Level-by-level sections
+    for p in plan.picks:
+        y -= 8
+        c.setFont("Helvetica-Bold", 12)
+        hdr = f"Level {p.level}"
+        if p.subclass:
+            hdr += f" — Subclass: {p.subclass}"
+        if y <= margin:
+            draw_footer(); c.showPage(); draw_title(title); y = height - margin - 0.35*inch
+        c.drawString(margin, y, hdr); y -= 14
+        body: list[str] = []
+        body.append(f"Features: {', '.join(p.features) if p.features else '—'}")
+        if p.asi:
+            body.append(f"ASI/Feat: {p.asi}")
+        if p.spells_known:
+            body.append(f"Spells Known: {', '.join(p.spells_known)}")
+        if p.prepared:
+            body.append(f"Prepared: {', '.join(p.prepared)}")
+        if p.hp_gain is not None:
+            body.append(f"HP Gain: {p.hp_gain}")
+        if p.notes:
+            body.append(p.notes)
+        y = draw_block(margin, y, body, content_width, leading=13)
+
+    if plan.notes_markdown:
+        draw_footer(); c.showPage(); draw_title(title)
+        y = height - margin - 0.35*inch
+        c.setFont("Helvetica-Bold", 12); c.drawString(margin, y, "Notes"); y -= 14
+        y = draw_block(margin, y, [plan.notes_markdown], content_width, leading=13)
+
+    draw_footer(); c.showPage(); c.save(); buffer.seek(0)
+    filename = (plan.name or "progression").replace(' ','_') + ".pdf"
+    return StreamingResponse(buffer, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+@app.post("/api/progression/save")
+async def progression_save(payload: ProgressionExport):
+    name = payload.plan.name or "Progression Plan"
+    created_at = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+    con = db(); cur = con.cursor()
+    cur.execute(
+        "INSERT INTO progression_library (name, created_at, plan_json, prompt) VALUES (?, ?, ?, ?)",
+        (name, created_at, payload.plan.model_dump_json(), None),
+    )
+    con.commit(); new_id = cur.lastrowid; con.close()
+    return {"id": new_id, "name": name, "created_at": created_at}
+
+@app.get("/api/progression/list")
+async def progression_list(limit: int = 10, page: int = 1, search: str | None = None, sort: str = "created_desc"):
+    con = db(); q_base = "FROM progression_library"; params: list[object] = []
+    if search: q_base += " WHERE name LIKE ?"; params.append(f"%{search}%")
+    total = con.execute(f"SELECT COUNT(*) {q_base}", params).fetchone()[0]
+    sort_map = {"name_asc":"name ASC","name_desc":"name DESC","created_asc":"created_at ASC","created_desc":"created_at DESC"}
+    order_sql = sort_map.get(sort, "created_at DESC"); offset = max(0, (page-1)*limit)
+    rows = con.execute(f"SELECT id,name,created_at {q_base} ORDER BY {order_sql} LIMIT ? OFFSET ?", (*params, limit, offset)).fetchall(); con.close()
+    return {"items":[dict(r) for r in rows], "total": total}
+
+@app.get("/api/progression/get/{plan_id}")
+async def progression_get(plan_id: int):
+    con = db(); row = con.execute("SELECT id,name,created_at,plan_json FROM progression_library WHERE id=?", (plan_id,)).fetchone(); con.close()
+    if not row: raise HTTPException(404, "Not found")
+    import json
+    plan = json.loads(row["plan_json"])  # already matches ProgressionPlan shape
+    return {"id": row["id"], "name": row["name"], "created_at": row["created_at"], "plan": plan}
+
+@app.delete("/api/progression/delete/{plan_id}")
+async def progression_delete(plan_id: int):
+    con = db(); cur = con.cursor(); cur.execute("DELETE FROM progression_library WHERE id=?", (plan_id,)); con.commit(); ok = cur.rowcount; con.close()
+    if not ok: raise HTTPException(404, "Not found"); return {"ok": True}
+
 @app.get("/api/library/list")
 async def library_list(limit: int = 10, page: int = 1, search: str | None = None, sort: str = "created_desc"):
     logger.debug("library: list limit=%s page=%s search=%s sort=%s", limit, page, search, sort)
@@ -984,20 +1316,25 @@ async def library_list(limit: int = 10, page: int = 1, search: str | None = None
 async def library_get(item_id: int):
     logger.debug("library: get id=%s", item_id)
     con = db()
-    row = con.execute("SELECT id, name, created_at, draft_json, backstory_json, portrait_png FROM library WHERE id = ?", (item_id,)).fetchone()
+    row = con.execute("SELECT id, name, created_at, draft_json, backstory_json, portrait_png, progression_json FROM library WHERE id = ?", (item_id,)).fetchone()
     con.close()
     if not row:
         raise HTTPException(404, "Not found")
     import json
     draft = json.loads(row["draft_json"])
     backstory = json.loads(row["backstory_json"]) if row["backstory_json"] else None
+    try:
+        progression_raw = row["progression_json"] if "progression_json" in row.keys() else None
+    except Exception:
+        progression_raw = None
+    progression = json.loads(progression_raw) if progression_raw else None
     portrait_b64 = None
     if row["portrait_png"] is not None:
         try:
             portrait_b64 = base64.b64encode(row["portrait_png"]).decode("ascii")
         except Exception:
             portrait_b64 = None
-    return {"id": row["id"], "name": row["name"], "created_at": row["created_at"], "draft": draft, "backstory": backstory, "portrait_base64": portrait_b64}
+    return {"id": row["id"], "name": row["name"], "created_at": row["created_at"], "draft": draft, "backstory": backstory, "progression": progression, "portrait_base64": portrait_b64}
 
 @app.post("/api/export/pdf")
 async def export_pdf(payload: ExportPDFInput):
@@ -1149,6 +1486,70 @@ async def export_pdf(payload: ExportPDFInput):
                     draw_footer(); c.showPage(); draw_title("Backstory"); y2 = height - margin - 0.35*inch; c.setFont("Helvetica", 11)
                 c.drawString(margin, y2, ln)
                 y2 -= para_leading
+
+    # Progression Plan page (optional)
+    if getattr(payload, 'progression', None):
+        try:
+            plan = payload.progression
+            draw_footer(); c.showPage()
+            draw_title("Progression Plan")
+            y3 = height - margin - 0.35*inch
+            # table header
+            c.setFont("Helvetica-Bold", 11)
+            cols = [
+                ("Level", 0.9*inch),
+                ("Features", 3.3*inch),
+                ("Subclass", 1.4*inch),
+                ("ASI/Feat", 1.2*inch),
+                ("HP", 0.7*inch),
+            ]
+            x = margin
+            for title_text, w in cols:
+                c.drawString(x, y3, title_text)
+                x += w
+            y3 -= 14
+            c.setFont("Helvetica", 10)
+            # rows
+            for p in plan.picks:
+                if y3 <= margin:
+                    draw_footer(); c.showPage(); draw_title("Progression Plan"); y3 = height - margin - 0.35*inch; c.setFont("Helvetica", 10)
+                    x = margin
+                    c.setFont("Helvetica-Bold", 11)
+                    for title_text, w in cols:
+                        c.drawString(x, y3, title_text); x += w
+                    y3 -= 14; c.setFont("Helvetica", 10)
+                x = margin
+                col_vals = [
+                    str(p.level),
+                    ", ".join(p.features) if (p.features or []) else "—",
+                    (p.subclass or "—"),
+                    (p.asi or "—"),
+                    (str(p.hp_gain) if (p.hp_gain is not None) else "—"),
+                ]
+                # simple draw; wrap features within its column
+                widths = [w for _, w in cols]
+                # compute wrapped lines for each col (features may wrap)
+                lines_per_col: list[list[str]] = []
+                for (val, w) in zip(col_vals, widths):
+                    lines_per_col.append(wrap_text(val, w))
+                row_height = max(len(col) for col in lines_per_col) * 13
+                # draw row lines
+                max_lines = max(len(col) for col in lines_per_col)
+                for line_idx in range(max_lines):
+                    x = margin
+                    for col_idx, w in enumerate(widths):
+                        text_line = lines_per_col[col_idx][line_idx] if line_idx < len(lines_per_col[col_idx]) else ""
+                        c.drawString(x, y3, text_line)
+                        x += w
+                    y3 -= 13
+            # optional notes
+            if getattr(plan, 'notes_markdown', None):
+                y3 -= 10
+                c.setFont("Helvetica-Bold", 11); c.drawString(margin, y3, "Notes"); y3 -= 14; c.setFont("Helvetica", 10)
+                y3 = draw_block(margin, y3, [plan.notes_markdown], content_width)
+        except Exception:
+            # If anything goes wrong drawing progression, still emit PDF
+            pass
 
     draw_footer(); c.showPage(); c.save()
     buffer.seek(0)

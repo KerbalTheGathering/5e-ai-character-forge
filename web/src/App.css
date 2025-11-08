@@ -77,14 +77,31 @@ body { margin: 0; font-family: InterVar, ui-sans-serif, system-ui, -apple-system
 .card-actions { margin-top:auto; display:flex; justify-content:flex-end; gap:.5rem; padding-top:.75rem; }
 .card-actions .btn { margin-top: 0; }
 .flex-scroll { flex: 1 1 auto; overflow: auto; }
-.draft-grid { display:flex; gap:1rem; min-height: 0; }
-.draft-left { flex: 2 1 0; min-width: 0; overflow:auto; padding-right:.25rem; }
-.draft-right { flex: 1 1 260px; min-width: 200px; display:flex; align-items:flex-start; justify-content:flex-end; }
+.fill-grid { height: calc(100vh - 3rem); min-height: 0; }
+.fill-grid > .card { height: 100%; display:flex; flex-direction:column; }
+
+/* Utility: make a single card fill its container */
+.fill-card { height: 100%; display:flex; flex-direction:column; }
+
+/* Themed table for progression and previews */
+.lib-table { width:100%; border-collapse: collapse; }
+.lib-table th, .lib-table td { padding:.55rem .75rem; border-bottom:1px solid rgba(255,255,255,.06); text-align:left; }
+.lib-table thead th { background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03)); color:#e5e7eb; font-weight:600; position:sticky; top:0; }
+.lib-table tbody tr:hover { background:rgba(255,255,255,.04); }
+.draft-grid { display:grid; grid-template-columns: 2fr 1fr; gap:1rem; min-height: 0; align-items:start; }
+.draft-left { grid-column: 1; min-width: 0; overflow:auto; padding-right:.25rem; }
+.draft-right { grid-column: 2; min-width: 200px; display:flex; align-items:flex-start; justify-content:flex-end; }
+.draft-full { grid-column: 1 / -1; min-width: 0; overflow:auto; padding-right:.25rem; }
+
+@media (max-width: 768px){
+  .draft-grid { grid-template-columns: 1fr; }
+  .draft-right { grid-column: 1; justify-content:flex-start; }
+}
 .portrait-img { max-width:100%; max-height:320px; border-radius:8px; border:1px solid rgba(192,192,192,.25); object-fit:cover; }
 .portrait-placeholder { width:100%; max-width:320px; height:240px; border-radius:8px; border:1px dashed rgba(192,192,192,.25); display:flex; align-items:center; justify-content:center; color:#9ca3af; }
 .ability-row { display:flex; align-items:center; justify-content:space-between; }
 .ability-row .glass-input { width:auto; }
-.scroll-area { max-height: 300px; overflow-y: auto; padding-right: .5rem; }
+.scroll-area { max-height: 520px; min-height: 260px; overflow-y: auto; padding-right: .5rem; }
 
 /* Toasts */
 .toast { padding:.5rem .75rem; border-radius:.6rem; border:1px solid rgba(192,192,192,.25); color:#e2e8f0; background:linear-gradient(180deg, rgba(30,30,30,.9), rgba(18,18,18,.9)); box-shadow: 0 6px 18px rgba(0,0,0,.4); }
@@ -107,7 +124,7 @@ body { margin: 0; font-family: InterVar, ui-sans-serif, system-ui, -apple-system
 .status-down .dot { background:linear-gradient(180deg, #e5e7eb, #9ca3af); }
 
 /* Sidebar */
-.sidebar { width: 260px; padding: 1rem; border-right:1px solid rgba(192,192,192,.15); background:
+.sidebar { width: 320px; padding: 1rem; border-right:1px solid rgba(192,192,192,.15); background:
   /* Top-right bold splash */
   radial-gradient(100% 100% at 100% 0%, rgba(185,28,28,.3), rgba(185,28,28,0) 70%),
   radial-gradient(50% 50% at 100% 0%, rgba(120,0,0,.55), rgba(120,0,0,0) 72%),
@@ -129,6 +146,7 @@ body { margin: 0; font-family: InterVar, ui-sans-serif, system-ui, -apple-system
 .nav-btn:hover { border-color: rgba(192,192,192,.4); }
 .nav-active { border-color:#b91c1c; box-shadow: inset 0 0 0 2px rgba(185,28,28,.25); }
 .nav-title { font-size:.8rem; letter-spacing:.06em; text-transform:uppercase; color:#9ca3af; opacity:.85; margin:.25rem 0; }
+.sidebar-sep { border:0; border-top:1px solid rgba(255,255,255,.08); margin:.8rem 0; }
 .engine-toggle { position:relative; height:34px; border:1px solid rgba(192,192,192,.25); border-radius:999px; display:flex; align-items:center; justify-content:space-between; padding:0 .6rem; cursor:pointer; background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03)); }
 .engine-toggle .label-left, .engine-toggle .label-right { font-size:.75rem; color:#cbd5e1; }
 .engine-toggle .knob { position:absolute; top:2px; left:2px; width:50%; height:30px; background:linear-gradient(180deg, rgba(185,28,28,.35), rgba(185,28,28,.2)); border:1px solid rgba(185,28,28,.5); border-radius:999px; transition:transform .2s ease; }
