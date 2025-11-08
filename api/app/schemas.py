@@ -102,3 +102,31 @@ class MagicItem(BaseModel):
 
 class MagicItemExport(BaseModel):
     item: MagicItem
+
+# ---------- Spells ----------
+class SpellInput(BaseModel):
+    name: Optional[str] = None
+    level: Optional[int] = None  # 0 for cantrip
+    school: Optional[str] = None
+    classes: Optional[list[str]] = None  # e.g., ["Wizard","Sorcerer"]
+    target: Optional[str] = None  # one | multiple | self | area
+    intent: Optional[str] = None  # damage | healing | utility | control
+    prompt: Optional[str] = None
+
+class Spell(BaseModel):
+    name: str
+    level: int  # 0-9
+    school: str
+    classes: list[str] = []
+    casting_time: str
+    range: str
+    duration: str
+    components: str
+    concentration: bool = False
+    ritual: bool = False
+    description: str
+    damage: Optional[str] = None  # e.g., 3d10 lightning (half on save)
+    save: Optional[str] = None  # e.g., DEX save half
+
+class SpellExport(BaseModel):
+    spell: Spell

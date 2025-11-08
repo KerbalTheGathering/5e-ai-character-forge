@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import LoadingButton from "./LoadingButton";
 
 export default function ItemLibraryTable({
   rows,
@@ -43,7 +44,7 @@ export default function ItemLibraryTable({
             <option value="name_asc">Name A→Z</option>
             <option value="name_desc">Name Z→A</option>
           </select>
-          <button className={`btn ${busy ? 'btn-disabled':''}`} onClick={onRefresh}>{busy? 'Loading…':'Refresh'}</button>
+          <LoadingButton loading={busy} onClick={onRefresh}>Refresh</LoadingButton>
         </div>
       </div>
       {!slice || slice.length===0 ? (
@@ -52,16 +53,16 @@ export default function ItemLibraryTable({
         <div className="table-wrap">
           <table className="table">
             <thead>
-              <tr><th>Name</th><th>Created</th><th style={{width:'1%'}}>Actions</th></tr>
+              <tr><th>Name</th><th>Created</th><th className="actions-col">Actions</th></tr>
             </thead>
             <tbody>
               {slice.map(r => (
                 <tr key={r.id}>
                   <td>{r.name}</td>
                   <td className="text-slate-400">{r.created_at}</td>
-                  <td>
-                    <button className="btn mr-2" onClick={()=>onSelect(r.id)}>Open</button>
-                    <button className="btn" onClick={()=>onDelete(r.id)}>Delete</button>
+                  <td className="actions-cell">
+                    <LoadingButton onClick={()=>onSelect(r.id)}>Open</LoadingButton>
+                    <LoadingButton onClick={()=>onDelete(r.id)}>Delete</LoadingButton>
                   </td>
                 </tr>
               ))}

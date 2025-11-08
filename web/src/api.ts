@@ -96,8 +96,8 @@ export interface BackstoryResult {
   prose_markdown: string;
 }
 
-export async function generateBackstory(body: BackstoryInput): Promise<BackstoryResult> {
-  const res = await fetch(`${API}/api/backstory`, {
+export async function generateBackstory(body: BackstoryInput, engine: 'google'|'local' = 'google'): Promise<BackstoryResult> {
+  const res = await fetch(`${API}/api/backstory?engine=${engine}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -189,8 +189,8 @@ export async function generateMagicItem(input: {
   rarity?: string | null;
   requires_attunement?: boolean | null;
   prompt?: string | null;
-}): Promise<MagicItem> {
-  const res = await fetch(`http://localhost:${import.meta.env.VITE_API_PORT ?? 8000}/api/items/generate`, {
+}, engine: 'google'|'local' = 'google'): Promise<MagicItem> {
+  const res = await fetch(`http://localhost:${import.meta.env.VITE_API_PORT ?? 8000}/api/items/generate?engine=${engine}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -255,8 +255,81 @@ export async function downloadItemPDF(item: MagicItem) {
   document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
 }
 
-export async function generatePortrait(draft: CharacterDraft, backstory?: BackstoryResult | null): Promise<Blob> {
-  const res = await fetch(`http://localhost:${import.meta.env.VITE_API_PORT ?? 8000}/api/portrait`, {
+// ----- Spells -----
+export interface Spell {
+  name: string;
+  level: number;
+  school: string;
+  classes: string[];
+  casting_time: string;
+  range: string;
+  duration: string;
+  components: string;
+  concentration?: boolean;
+  ritual?: boolean;
+  description: string;
+  damage?: string | null;
+  save?: string | null;
+}
+
+export async function generateSpell(input: {
+  name?: string | null;
+  level?: number | null;
+  school?: string | null;
+  classes?: string[] | null;
+  target?: string | null;
+  intent?: string | null;
+  prompt?: string | null;
+}, engine: 'google'|'local' = 'google'): Promise<Spell> {
+  const res = await fetch(`http://localhost:${import.meta.env.VITE_API_PORT ?? 8000}/api/spells/generate?engine=${engine}`, {
+    method: 'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(input)
+  });
+  if (!res.ok) throw new Error(`spell generate failed: ${res.status}`);
+  return res.json() as Promise<Spell>;
+}
+
+export async function saveSpell(spell: Spell) {
+  const res = await fetch(`http://localhost:${import.meta.env.VITE_API_PORT ?? 8000}/api/spells/save`, {
+    method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ spell })
+  });
+  if (!res.ok) throw new Error(`spell save failed: ${res.status}`);
+  return res.json() as Promise<{ id:number; name:string; created_at:string }>;
+}
+
+export async function listSpells(limit=10, page=1, search='', sort='created_desc') {
+  const q = new URLSearchParams({ limit:String(limit), page:String(page), sort}); if (search) q.set('search', search);
+  const res = await fetch(`http://localhost:${import.meta.env.VITE_API_PORT ?? 8000}/api/spells/list?${q.toString()}`);
+  if (!res.ok) throw new Error(`spells list failed: ${res.status}`);
+  return res.json() as Promise<{ items:{id:number; name:string; created_at:string}[], total:number }>;
+}
+
+export async function getSpell(id:number) {
+  const res = await fetch(`http://localhost:${import.meta.env.VITE_API_PORT ?? 8000}/api/spells/get/${id}`);
+  if (!res.ok) throw new Error(`spell get failed: ${res.status}`);
+  return res.json() as Promise<{ id:number; name:string; created_at:string; spell: Spell }>;
+}
+
+export async function deleteSpell(id:number) {
+  const res = await fetch(`http://localhost:${import.meta.env.VITE_API_PORT ?? 8000}/api/spells/delete/${id}`, { method:'DELETE' });
+  if (!res.ok) throw new Error(`spell delete failed: ${res.status}`);
+  return res.json() as Promise<{ ok:true }>;
+}
+
+export function downloadSpellJSON(spell: Spell) {
+  const blob = new Blob([JSON.stringify(spell, null, 2)], { type:'application/json' });
+  const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${spell.name.replace(/\s+/g,'_')}.json`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+}
+
+export function downloadSpellMarkdown(spell: Spell) {
+  const md = `# ${spell.name} (Level ${spell.level} ${spell.school})\n\n`+
+    `- Classes: ${spell.classes.join(', ')}\n`+
+    `- Casting Time: ${spell.casting_time}\n- Range: ${spell.range}\n- Duration: ${spell.duration}\n- Components: ${spell.components}\n- Concentration: ${spell.concentration? 'Yes':'No'}\n- Ritual: ${spell.ritual? 'Yes':'No'}\n\n`+
+    `${spell.description}\n\n${spell.damage? `Damage: ${spell.damage}\n`:''}${spell.save? `Save: ${spell.save}\n`:''}`;
+  const blob = new Blob([md], { type:'text/markdown' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${spell.name.replace(/\s+/g,'_')}.md`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+}
+
+export async function generatePortrait(draft: CharacterDraft, backstory?: BackstoryResult | null, engine: 'google'|'local' = 'google'): Promise<Blob> {
+  const res = await fetch(`http://localhost:${import.meta.env.VITE_API_PORT ?? 8000}/api/portrait?engine=${engine}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ draft, backstory: backstory ?? null }),

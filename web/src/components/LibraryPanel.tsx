@@ -1,3 +1,5 @@
+import LoadingButton from "./LoadingButton";
+
 export default function LibraryPanel({
   lib,
   busyLib,
@@ -15,7 +17,7 @@ export default function LibraryPanel({
     <>
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold mb-3">Library</h2>
-        <button className={`btn ${busyLib ? "btn-disabled":""}`} onClick={doListLib}>{busyLib ? "Loading…" : "Refresh"}</button>
+        <LoadingButton loading={busyLib} onClick={doListLib}>Refresh</LoadingButton>
       </div>
       {!lib || lib.length === 0 ? (
         <p className="text-slate-300">No saved characters yet. Save one, then click Refresh.</p>
@@ -28,8 +30,8 @@ export default function LibraryPanel({
                 <div className="text-slate-400">{item.created_at} · id {item.id}</div>
               </div>
               <div>
-                <button className="btn mr-2" onClick={()=>doLoad(item.id)}>Open</button>
-                <button className="btn" onClick={()=>doDelete(item.id)}>Delete</button>
+                <LoadingButton className="mr-2" onClick={()=>doLoad(item.id)}>Open</LoadingButton>
+                <LoadingButton onClick={()=>doDelete(item.id)}>Delete</LoadingButton>
               </div>
             </li>
           ))}
@@ -38,4 +40,3 @@ export default function LibraryPanel({
     </>
   );
 }
-

@@ -1,4 +1,5 @@
 // no default React import needed with react-jsx runtime
+import { useEffect, useState } from 'react';
 
 function IconWand({ size = 22 }: { size?: number }) {
   return (
@@ -26,13 +27,34 @@ export default function Sidebar({
   section,
   onSelect,
   apiOk,
+  engine,
+  setEngine,
 }: {
   expanded: boolean;
   setExpanded: (b: boolean)=>void;
-  section: "char-new" | "char-lib" | "item-new" | "item-lib";
-  onSelect: (s: "char-new"|"char-lib"|"item-new"|"item-lib")=>void;
+  section: "char-new" | "char-lib" | "item-new" | "item-lib" | "spell-new" | "spell-lib";
+  onSelect: (s: "char-new"|"char-lib"|"item-new"|"item-lib"|"spell-new"|"spell-lib")=>void;
   apiOk: boolean | null;
+  engine: 'google' | 'local';
+  setEngine: (e:'google'|'local')=>void;
 }) {
+  const [modelHealth, setModelHealth] = useState<null | { mode_default:string; image?:any; text?:any }>(null);
+
+  useEffect(() => {
+    if (engine !== 'local') { setModelHealth(null); return; }
+    const url = `http://localhost:${import.meta.env.VITE_API_PORT ?? 8000}/health/model`;
+    let cancelled = false;
+    (async()=>{
+      try{
+        const r = await fetch(url);
+        if (!cancelled) setModelHealth(await r.json());
+      } catch {
+        if (!cancelled) setModelHealth(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [engine]);
+
   return (
     <aside className={`sidebar ${expanded ? "" : "sidebar-collapsed"}`}>
       <div className="sidebar-header">
@@ -65,7 +87,29 @@ export default function Sidebar({
         <button className={`nav-btn ${section === "item-lib" ? "nav-active" : ""}`} onClick={()=>onSelect("item-lib")} title="Magic Item Library">
           <IconLibrary />{expanded && <span>Library</span>}
         </button>
+
+        {expanded && <div className="nav-title" style={{marginTop:'.6rem'}}>Spells</div>}
+        <button className={`nav-btn ${section === "spell-new" ? "nav-active" : ""}`} onClick={()=>onSelect("spell-new")} title="New Spell">
+          <IconWand />{expanded && <span>New</span>}
+        </button>
+        <button className={`nav-btn ${section === "spell-lib" ? "nav-active" : ""}`} onClick={()=>onSelect("spell-lib")} title="Spell Library">
+          <IconLibrary />{expanded && <span>Library</span>}
+        </button>
       </nav>
+      <div style={{marginTop:'auto'}}>
+        {expanded && <div className="nav-title" style={{marginTop:'.6rem'}}>Engine</div>}
+        <div className="engine-toggle" onClick={()=>setEngine(engine==='google'?'local':'google')} title="Toggle inference engine">
+          <div className={`knob ${engine==='local'?'right':''}`}></div>
+          {expanded && <span className="label-left">Google</span>}
+          {expanded && <span className="label-right">Local</span>}
+        </div>
+        {engine==='local' && expanded && modelHealth && (
+          <div className="text-slate-300" style={{fontSize:'.8rem', marginTop:'.5rem', lineHeight:1.4}}>
+            <div><strong>Image</strong>: {modelHealth.image?.model} @ {modelHealth.image?.device} {modelHealth.image?.dtype ? `(${modelHealth.image?.dtype})`: ''}</div>
+            <div><strong>Text</strong>: {modelHealth.text?.model} {modelHealth.text?.reachable ? '✓' : '✗'}</div>
+          </div>
+        )}
+      </div>
     </aside>
   );
 }

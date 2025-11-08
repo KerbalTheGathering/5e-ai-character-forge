@@ -1,4 +1,5 @@
 import { downloadItemJSON, downloadItemMarkdown, downloadItemPDF, type MagicItem } from "../api";
+import LoadingButton from "./LoadingButton";
 
 export default function MagicItemPreview({ item, onSave }: { item: MagicItem | null; onSave: ()=>void | Promise<void> }){
   if (!item) return <p className="text-slate-300">No item generated yet.</p>;
@@ -12,10 +13,10 @@ export default function MagicItemPreview({ item, onSave }: { item: MagicItem | n
         )}
       </div>
       <div className="card-actions">
-        <button className="btn mr-2" onClick={()=>downloadItemJSON(item)}>Download JSON</button>
-        <button className="btn mr-2" onClick={()=>downloadItemMarkdown(item)}>Download Markdown</button>
-        <button className="btn mr-2" onClick={()=>downloadItemPDF(item)}>Download PDF</button>
-        <button className="btn" onClick={onSave}>Save to Library</button>
+        <LoadingButton className="mr-2" onClick={()=>downloadItemJSON(item)}>Download JSON</LoadingButton>
+        <LoadingButton className="mr-2" onClick={()=>downloadItemMarkdown(item)}>Download Markdown</LoadingButton>
+        <LoadingButton className="mr-2" onClick={()=>downloadItemPDF(item)}>Download PDF</LoadingButton>
+        <LoadingButton onClick={onSave}>Save to Library</LoadingButton>
       </div>
     </div>
   );

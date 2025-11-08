@@ -11,7 +11,7 @@ import os, asyncio
 from pathlib import Path
 from dotenv import load_dotenv
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import httpx
@@ -21,7 +21,8 @@ from typing import Dict, List
 from .schemas import (
     AbilitySet, GenerateInput, CharacterDraft, AbilityBlock, Proficiency,
     BackstoryInput, BackstoryResult, ExportInput, SaveInput, ExportPDFInput,
-    MagicItemInput, MagicItem, MagicItemExport
+    MagicItemInput, MagicItem, MagicItemExport,
+    SpellInput, Spell, SpellExport
 )
 import google.generativeai as genai  # for text backstory
 # New SDK for image generation
@@ -44,7 +45,19 @@ from requests_cache import CachedSession
 import sqlite3
 from datetime import datetime
 
+import io
+import torch
+from diffusers import FluxPipeline
+
 load_dotenv()
+
+# Configure application logging
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+logger = logging.getLogger("5e-forge")
 
 DB_PATH = "app.db"
 
@@ -82,6 +95,15 @@ def init_db():
       prompt TEXT
     )
     """)
+    con.execute("""
+    CREATE TABLE IF NOT EXISTS spell_library (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT,
+      created_at TEXT NOT NULL,
+      spell_json TEXT NOT NULL,
+      prompt TEXT
+    )
+    """)
     con.close()
 
 init_db()
@@ -90,12 +112,116 @@ init_db()
 PORT = int(os.getenv("PORT_API", "8000"))
 RULES_BASE = os.getenv("RULES_BASE_URL", "https://www.dnd5eapi.co")
 RULES_API_PREFIX = os.getenv("RULES_API_PREFIX", "api/2014")
-RULES_API_PREFIX = os.getenv("RULES_API_PREFIX", "api/2014")
 GEMINI_MODEL_TEXT = os.getenv("GEMINI_MODEL_TEXT", "gemini-2.5-pro")
 GEMINI_MODEL_IMAGE = os.getenv("GEMINI_MODEL_IMAGE", "gemini-2.5-flash-image")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
 if GOOGLE_API_KEY:
     genai.configure(api_key=GOOGLE_API_KEY)
+
+# Local inference toggles
+USE_LOCAL = os.getenv("USE_LOCAL_INFERENCE", "false").lower() == "true"
+LOCAL_LLM_URL = os.getenv("LOCAL_LLM_URL", "http://localhost:11434/api/generate")
+LOCAL_LLM_MODEL = os.getenv("LOCAL_LLM_MODEL", "gpt-oss:120b")
+LOCAL_PORTRAIT_URL = os.getenv("LOCAL_PORTRAIT_URL", "http://localhost:7860/generate")
+LOCAL_IMAGE_BASE_MODEL = os.getenv("LOCAL_IMAGE_BASE_MODEL", "stabilityai/stable-diffusion-xl-base-1.0")
+LOCAL_IMAGE_MODEL = os.getenv("LOCAL_IMAGE_MODEL", "ByteDance/SDXL-Lightning")
+# Optional tuning for local image generation
+LOCAL_IMAGE_STEPS = int(os.getenv("LOCAL_IMAGE_STEPS", "4"))
+LOCAL_IMAGE_GUIDANCE = float(os.getenv("LOCAL_IMAGE_GUIDANCE", "0.0"))
+LOCAL_IMAGE_SEED = int(os.getenv("LOCAL_IMAGE_SEED", "0"))
+LOCAL_IMAGE_WIDTH = int(os.getenv("LOCAL_IMAGE_WIDTH", "0"))  # 0 = use model default
+LOCAL_IMAGE_HEIGHT = int(os.getenv("LOCAL_IMAGE_HEIGHT", "0"))  # 0 = use model default
+
+async def local_text_generate(prompt: str) -> str:
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            r = await client.post(LOCAL_LLM_URL, json={"model": LOCAL_LLM_MODEL, "prompt": prompt, "stream": False})
+            r.raise_for_status(); data = r.json();
+            return data.get("response") or data.get("text") or data.get("message") or ""
+    except Exception as e:
+        raise HTTPException(502, f"local llm failed: {e}")
+
+async def local_image_generate(prompt: str) -> bytes:
+    """Generate an image locally.
+    Diffusers pipeline (MPS preferred on macOS)
+    Returns PNG bytes.
+    """
+    logging.info("Attempting local image generation via Diffusers (preferring MPS)...")
+    # 1) Diffusers path
+    try:
+        # Prefer MPS on macOS; then CUDA; else CPU. Guard CUDA probe to avoid errors on CPU-only builds.
+        try:
+            mps_ok = bool(getattr(torch.backends, "mps", None) and torch.backends.mps.is_available())
+        except Exception:
+            mps_ok = False
+        cuda_ok = False
+        try:
+            cuda_ok = bool(getattr(torch.version, "cuda", None)) and bool(hasattr(torch, "cuda")) and bool(torch.cuda.is_available())
+        except Exception:
+            cuda_ok = False
+        device = "mps" if mps_ok else ("cuda" if cuda_ok else "cpu")
+        # MPS prefers float16; CUDA commonly uses bfloat16; CPU stays float32.
+        dtype = torch.float16 if device == "mps" else (torch.bfloat16 if device == "cuda" else torch.float32)
+        logger.info("Diffusion device=%s dtype=%s model=%s", device, str(dtype).split(".")[-1], LOCAL_IMAGE_MODEL)
+
+        # Load the requested model repo (e.g., FLUX.1-schnell) with correct dtype.
+        # Use new `dtype` arg (avoid deprecation warning). Do not force a variant.
+        pipe = FluxPipeline.from_pretrained(LOCAL_IMAGE_MODEL, dtype=dtype)
+
+        try:
+            logger.info("Moving diffusion pipeline to device %s...", device)
+            pipe.to(device)
+        except Exception:
+            logger.info("Diffusion pipeline .to(%s) failed; continuing on default device", device)
+
+        aspect_ratios = {
+            "1:1": (1328, 1328),
+            "16:9": (1664, 928),
+            "9:16": (928, 1664),
+            "4:3": (1472, 1140),
+            "3:4": (1140, 1472),
+            "3:2": (1584, 1056),
+            "2:3": (1056, 1584),
+        }
+        width, height = aspect_ratios.get("1:1", (0, 0))
+        seed = LOCAL_IMAGE_SEED if LOCAL_IMAGE_SEED >= 0 else 0
+        # Use CPU generator; MPS generators are unsupported and can cause runtime errors.
+        #gen = torch.Generator(device=device).manual_seed(seed)
+        #width = LOCAL_IMAGE_WIDTH if LOCAL_IMAGE_WIDTH > 0 else (512 if device in ("mps", "cuda") else 0)
+        #height = LOCAL_IMAGE_HEIGHT if LOCAL_IMAGE_HEIGHT > 0 else (512 if device in ("mps", "cuda") else 0)
+        # Use CPU generator on MPS to avoid known issues with MPS generators.
+        gen_device = "cpu" if device == "mps" else device
+        kwargs = {
+            "prompt": prompt,
+            "width": width,
+            "height": height,
+            "num_inference_steps": LOCAL_IMAGE_STEPS,
+            "guidance_scale": LOCAL_IMAGE_GUIDANCE,
+            "max_sequence_length": 512,
+            "generator": torch.Generator(device=gen_device).manual_seed(seed),
+        }
+
+        try:
+            img = pipe(**kwargs).images[0]
+        except Exception as inner_e:
+            # If MPS path fails (common with certain PyTorch MPS edge cases), retry on CPU.
+            if device == "mps":
+                logger.warning("MPS generation failed (%s); retrying on CPU float32...", inner_e)
+                pipe.to("cpu")
+                kwargs_retry = dict(kwargs)
+                kwargs_retry["generator"] = torch.Generator(device="cpu").manual_seed(seed)
+                img = pipe(**kwargs_retry).images[0]
+            else:
+                raise
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return buf.getvalue()
+    except Exception as e:
+        logger.exception("Diffusers generation failed: %s", e)
+        raise HTTPException(500, f"local Diffusers generation failed: {e}. Ensure torch with MPS support and diffusers are installed.")
+
+def use_local(engine: str | None) -> bool:
+    return (engine == 'local') or (engine is None and USE_LOCAL)
 
 app = FastAPI(title="5e-ai-character-forge API", version="0.1.0")
 
@@ -170,6 +296,51 @@ def markdown_from_draft(d: CharacterDraft, bs: BackstoryResult | None = None) ->
 @app.get("/health")
 async def health():
     return {"ok": True}
+
+@app.get("/health/model")
+async def health_model():
+    """Report local inference model/device info for image and text.
+    Note: This does not load pipelines; it infers device/dtype from torch availability
+    and optionally probes the local text endpoint with a fast OPTIONS request.
+    """
+    # device/dtype selection mirrors local_image_generate()
+    try:
+        try:
+            cuda_ok = bool(hasattr(torch, "cuda")) and bool(torch.cuda.is_available())
+        except Exception:
+            cuda_ok = False
+        try:
+            mps_ok = bool(getattr(torch.backends, "mps", None) and torch.backends.mps.is_available())
+        except Exception:
+            mps_ok = False
+        device = "cuda" if cuda_ok else ("mps" if mps_ok else "cpu")
+        dtype = "bfloat16" if device == "cuda" else ("float16" if device == "mps" else "float32")
+    except Exception:
+        device = "cpu"; dtype = "float32"
+
+    # Optional quick reachability probe for local text endpoint
+    text_reachable = False
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            resp = await client.options(LOCAL_LLM_URL)
+            text_reachable = resp.status_code < 500
+    except Exception:
+        text_reachable = False
+
+    return {
+        "mode_default": "local" if USE_LOCAL else "google",
+        "image": {
+            "model": LOCAL_IMAGE_MODEL,
+            "base_model": LOCAL_IMAGE_BASE_MODEL,
+            "device": device,
+            "dtype": dtype,
+        },
+        "text": {
+            "url": LOCAL_LLM_URL,
+            "model": LOCAL_LLM_MODEL,
+            "reachable": text_reachable,
+        },
+    }
 
 @app.get("/api/rules/{path:path}")
 async def rules_proxy(path: str):
@@ -285,10 +456,12 @@ BACKSTORY_SYS = (
 )
 
 @app.post("/api/backstory", response_model=BackstoryResult)
-async def backstory_route(payload: BackstoryInput):
-    if not GOOGLE_API_KEY:
-        raise HTTPException(400, "Missing GOOGLE_API_KEY in environment.")
-    model = genai.GenerativeModel(GEMINI_MODEL_TEXT, system_instruction=BACKSTORY_SYS)
+async def backstory_route(payload: BackstoryInput, engine: str | None = Query(default=None)):
+    model = None
+    if not use_local(engine):
+        if not GOOGLE_API_KEY:
+            raise HTTPException(400, "Missing GOOGLE_API_KEY in environment.")
+        model = genai.GenerativeModel(GEMINI_MODEL_TEXT, system_instruction=BACKSTORY_SYS)
 
     d = payload.draft
     abil = d.abilities
@@ -310,8 +483,11 @@ async def backstory_route(payload: BackstoryInput):
     if not payload.include_hooks:
         prompt += " The 'hooks' array should be empty."
 
-    resp = await asyncio.to_thread(model.generate_content, prompt)
-    text = resp.text.strip()
+    if use_local(engine):
+        text = await local_text_generate(prompt)
+    else:
+        resp = await asyncio.to_thread(model.generate_content, prompt)
+        text = resp.text.strip()
     # Some responses may include code fences; strip them.
     if text.startswith("```"):
         text = text.strip("`")
@@ -339,10 +515,12 @@ MI_GUIDE = (
 )
 
 @app.post("/api/items/generate", response_model=MagicItem)
-async def items_generate(payload: MagicItemInput):
-    if not GOOGLE_API_KEY:
-        raise HTTPException(400, "Missing GOOGLE_API_KEY in environment.")
-    model = genai.GenerativeModel(GEMINI_MODEL_TEXT, system_instruction=MI_GUIDE)
+async def items_generate(payload: MagicItemInput, engine: str | None = Query(default=None)):
+    model = None
+    if not use_local(engine):
+        if not GOOGLE_API_KEY:
+            raise HTTPException(400, "Missing GOOGLE_API_KEY in environment.")
+        model = genai.GenerativeModel(GEMINI_MODEL_TEXT, system_instruction=MI_GUIDE)
     rarity = (payload.rarity or "Uncommon").title()
     name = payload.name or "Unnamed Relic"
     itype = payload.item_type or "Wondrous item"
@@ -355,8 +533,11 @@ async def items_generate(payload: MagicItemInput):
         + (payload.prompt or "")
     )
     try:
-        resp = await asyncio.to_thread(model.generate_content, long_prompt)
-        text = resp.text.strip()
+        if use_local(engine):
+            text = await local_text_generate(long_prompt)
+        else:
+            resp = await asyncio.to_thread(model.generate_content, long_prompt)
+            text = resp.text.strip()
         if text.startswith("```"):
             text = text.strip("`").replace("json\n","").replace("\njson","")
         import json
@@ -448,12 +629,13 @@ def _extract_image_b64(resp) -> str:
     raise ValueError("No inline image data found in model response")
 
 @app.post("/api/portrait")
-async def generate_portrait(payload: ExportInput):
-    logging.info("Generating portrait image via Gemini...")
-    if not GOOGLE_API_KEY:
-        raise HTTPException(400, "Missing GOOGLE_API_KEY in environment.")
-    if genai_new is None:
-        raise HTTPException(500, "google-genai not installed. Please install google-genai >= 0.3.0")
+async def generate_portrait(payload: ExportInput, engine: str | None = Query(default=None)):
+    logging.info("Generating portrait image...")
+    if not use_local(engine):
+        if not GOOGLE_API_KEY:
+            raise HTTPException(400, "Missing GOOGLE_API_KEY in environment.")
+        if genai_new is None:
+            raise HTTPException(500, "google-genai not installed. Please install google-genai >= 0.3.0")
     # build a concise prompt from draft + backstory
     try:
         logging.info("Constructing portrait prompt...")
@@ -465,41 +647,51 @@ async def generate_portrait(payload: ExportInput):
             f"Create a detailed fantasy portrait of a D&D 5e character.\n"
             f"Name: {name}. Race: {d.race}. Class: {d.cls}. Background: {d.background}. Level: {d.level}.\n"
             f"Key abilities: STR {abilities.STR}, DEX {abilities.DEX}, CON {abilities.CON}, INT {abilities.INT}, WIS {abilities.WIS}, CHA {abilities.CHA}.\n"
-            f"Equipment hints: {', '.join(d.equipment[:8])}. Features: {', '.join((d.features or [])[:6])}.\n"
-            f"Style: painterly, dramatic lighting, half-body portrait, fantasy, high-quality.\n"
-            f"Backstory context (optional): {bs_text}"
         )
     except Exception as e:
         raise HTTPException(400, f"portrait prompt construction failed: {e}")
     try:
-        logging.info("Generating portrait image...")
-        client = genai_new.Client(api_key=GOOGLE_API_KEY)
-        # normalize common aliases
-        model_name = GEMINI_MODEL_IMAGE
-        if model_name in ("gemini-flash-2.5", "gemini-2.5-flash"):
-            model_name = "gemini-2.5-flash-image"
-        resp = await asyncio.to_thread(
-            client.models.generate_content,
-            model=model_name,
-            contents=[prompt],
-        )
-        logging.info("Extracting image data from response...")
-        image_bytes: bytes | None = None
-        for part in getattr(resp, "parts", []) or []:
-            if getattr(part, "inline_data", None) is not None:
-                # PIL Image from SDK helper
-                img = part.as_image()
-                buf = BytesIO()
-                img.save(buf, format="PNG")
-                image_bytes = buf.getvalue()
-                break
-        if not image_bytes:
-            raise ValueError("No image returned by model")
+        if use_local(engine):
+            logging.info("Using local image generation...")
+            image_bytes = await local_image_generate(prompt)
+        else:
+            logging.info("Using Gemini image generation...")
+            client = genai_new.Client(api_key=GOOGLE_API_KEY)
+            model_name = GEMINI_MODEL_IMAGE
+            if model_name in ("gemini-flash-2.5", "gemini-2.5-flash"):
+                model_name = "gemini-2.5-flash-image"
+            resp = await asyncio.to_thread(
+                client.models.generate_content,
+                model=model_name,
+                contents=[prompt],
+            )
+            logging.info("Extracting image data from response...")
+            image_bytes: bytes | None = None
+            for part in getattr(resp, "parts", []) or []:
+                if getattr(part, "inline_data", None) is not None:
+                    img = part.as_image(); buf = BytesIO(); img.save(buf, format="PNG"); image_bytes = buf.getvalue(); break
+            if not image_bytes:
+                raise ValueError("No image returned by model")
     except Exception as e:
-        logging.error(f"Image generation failed: {e}")
+        logger.exception("Image generation failed")
         raise HTTPException(502, f"image generation failed: {e}")
+    # Basic sanity log
+    try:
+        logger.info("portrait bytes: %d bytes%s", len(image_bytes),
+                    " (png)" if image_bytes.startswith(b"\x89PNG\r\n\x1a\n") else "")
+    except Exception:
+        pass
     filename = f"{(d.name or d.race + ' ' + d.cls).replace(' ','_')}_portrait.png"
-    return StreamingResponse(BytesIO(image_bytes), media_type="image/png", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+    # Return as a normal binary Response with explicit length
+    return Response(
+        content=image_bytes,
+        media_type="image/png",
+        headers={
+            "Content-Disposition": f'inline; filename="{filename}"',
+            "Content-Length": str(len(image_bytes)),
+            "Cache-Control": "no-store",
+        },
+    )
 
 @app.post("/api/export/json")
 async def export_json(payload: ExportInput):
@@ -584,6 +776,76 @@ async def items_export_pdf(payload: MagicItemExport):
     draw_footer(); c.showPage(); c.save(); buffer.seek(0)
     filename = f"{item.name.replace(' ', '_')}_Item.pdf"
     return StreamingResponse(buffer, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename=\"{filename}\"'})
+
+# ---- Spells ----
+SPELL_GUIDE = (
+    "You are a D&D 5e SRD-friendly designer. Create balanced, flavorful spells. "
+    "Use style similar to the Player's Handbook. Follow guidance: balance, identity, duration/range/area tradeoffs, utility; and the Spell Damage table guidelines." 
+)
+
+@app.post("/api/spells/generate", response_model=Spell)
+async def spells_generate(payload: SpellInput, engine: str | None = Query(default=None)):
+    model = None
+    if not use_local(engine):
+        if not GOOGLE_API_KEY:
+            raise HTTPException(400, "Missing GOOGLE_API_KEY in environment.")
+        model = genai.GenerativeModel(GEMINI_MODEL_TEXT, system_instruction=SPELL_GUIDE)
+    name = payload.name or "Unnamed Spell"
+    level = 0 if payload.level is None else max(0, min(9, payload.level))
+    school = payload.school or "Evocation"
+    classes = ", ".join(payload.classes or ["Wizard"])
+    target = payload.target or "one"
+    intent = payload.intent or "damage"
+    rules = (
+        "Design a single spell and return JSON ONLY with keys: "
+        "name, level (0-9), school, classes (array of strings), casting_time, range, duration, components, concentration (bool), ritual (bool), description, damage (optional), save (optional).\n"
+        f"Inputs: name={name}; level={level}; school={school}; classes={classes}; target={target}; intent={intent}.\n"
+        "Use the Spell Damage table (approximate dice by level, half on save). If healing, use same table as HP restoration. Cantrips should be weak and scale normally.\n"
+        + (payload.prompt or "")
+    )
+    try:
+        if use_local(engine):
+            text = await local_text_generate(rules)
+        else:
+            resp = await asyncio.to_thread(model.generate_content, rules)
+            text = resp.text.strip()
+        if text.startswith("```"):
+            text = text.strip("`").replace("json\n","").replace("\njson","")
+        import json
+        data = json.loads(text)
+        spell = Spell(**data)
+        return spell
+    except Exception as e:
+        raise HTTPException(502, f"spell generation failed: {e}")
+
+@app.post("/api/spells/save")
+async def spells_save(payload: SpellExport):
+    con = db(); cur = con.cursor(); created_at = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+    cur.execute("INSERT INTO spell_library (name, created_at, spell_json, prompt) VALUES (?, ?, ?, ?)", (payload.spell.name, created_at, payload.spell.model_dump_json(), None))
+    con.commit(); new_id = cur.lastrowid; con.close(); return {"id": new_id, "name": payload.spell.name, "created_at": created_at}
+
+@app.get("/api/spells/list")
+async def spells_list(limit: int = 10, page: int = 1, search: str | None = None, sort: str = "created_desc"):
+    con = db(); q_base = "FROM spell_library"; params: list[object] = []
+    if search: q_base += " WHERE name LIKE ?"; params.append(f"%{search}%")
+    total = con.execute(f"SELECT COUNT(*) {q_base}", params).fetchone()[0]
+    sort_map = {"name_asc":"name ASC","name_desc":"name DESC","created_asc":"created_at ASC","created_desc":"created_at DESC"}
+    order_sql = sort_map.get(sort, "created_at DESC"); offset = max(0, (page-1)*limit)
+    rows = con.execute(f"SELECT id,name,created_at {q_base} ORDER BY {order_sql} LIMIT ? OFFSET ?", (*params, limit, offset)).fetchall(); con.close()
+    return {"items":[dict(r) for r in rows], "total": total}
+
+@app.get("/api/spells/get/{spell_id}")
+async def spells_get(spell_id: int):
+    con = db(); row = con.execute("SELECT id,name,created_at,spell_json FROM spell_library WHERE id=?", (spell_id,)).fetchone(); con.close()
+    if not row: raise HTTPException(404, "Not found")
+    import json
+    spell = json.loads(row["spell_json"])
+    return {"id": row["id"], "name": row["name"], "created_at": row["created_at"], "spell": spell}
+
+@app.delete("/api/spells/delete/{spell_id}")
+async def spells_delete(spell_id: int):
+    con = db(); cur = con.cursor(); cur.execute("DELETE FROM spell_library WHERE id=?", (spell_id,)); con.commit(); ok = cur.rowcount; con.close();
+    if not ok: raise HTTPException(404, "Not found"); return {"ok": True}
 
 @app.get("/api/library/list")
 async def library_list(limit: int = 10, page: int = 1, search: str | None = None, sort: str = "created_desc"):
@@ -796,3 +1058,4 @@ async def library_delete(item_id: int):
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=PORT)
+# ---- Magic Items ----

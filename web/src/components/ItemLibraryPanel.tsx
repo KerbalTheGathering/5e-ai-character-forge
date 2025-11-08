@@ -1,3 +1,5 @@
+import LoadingButton from "./LoadingButton";
+
 export default function ItemLibraryPanel({
   lib,
   busy,
@@ -15,7 +17,7 @@ export default function ItemLibraryPanel({
     <>
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold mb-3">Magic Item Library</h2>
-        <button className={`btn ${busy ? 'btn-disabled':''}`} onClick={onRefresh}>{busy? 'Loading…':'Refresh'}</button>
+        <LoadingButton loading={busy} onClick={onRefresh}>Refresh</LoadingButton>
       </div>
       {!lib || lib.length===0 ? <p className="text-slate-300">No items saved yet.</p> : (
         <ul className="text-sm">
@@ -26,8 +28,8 @@ export default function ItemLibraryPanel({
                 <div className="text-slate-400">{it.created_at} · id {it.id}</div>
               </div>
               <div>
-                <button className="btn mr-2" onClick={()=>onOpen(it.id)}>Open</button>
-                <button className="btn" onClick={()=>onDelete(it.id)}>Delete</button>
+                <LoadingButton className="mr-2" onClick={()=>onOpen(it.id)}>Open</LoadingButton>
+                <LoadingButton onClick={()=>onDelete(it.id)}>Delete</LoadingButton>
               </div>
             </li>
           ))}
@@ -36,4 +38,3 @@ export default function ItemLibraryPanel({
     </>
   );
 }
-

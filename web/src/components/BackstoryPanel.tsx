@@ -1,4 +1,5 @@
 import type { BackstoryResult, CharacterDraft, LengthOpt, Tone } from "../api";
+import LoadingButton from "./LoadingButton";
 
 export default function BackstoryPanel({
   draft,
@@ -18,7 +19,8 @@ export default function BackstoryPanel({
   backstory: BackstoryResult | null;
 }){
   return (
-    <div className="card-flex">
+    // Ensure button row aligns with adjacent cards (e.g., Draft panel)
+    <div className="card-flex" style={{ minHeight: 320 }}>
       {!draft ? <p className="text-slate-300">Generate a draft first.</p> : (
         <>
           <div className="grid gap-2" style={{gridTemplateColumns:"repeat(3,minmax(0,1fr))"}}>
@@ -41,11 +43,8 @@ export default function BackstoryPanel({
               </label>
             </div>
           </div>
-          <div className="card-actions">
-            <button disabled={busyBS} onClick={doBackstory} className={`btn ${busyBS ? "btn-disabled":""}`}>{busyBS ? "Writing…" : "Generate backstory"}</button>
-          </div>
           {backstory && (
-            <div className="mt-4 text-sm scroll-area">
+            <div className="mt-4 text-sm scroll-area flex-scroll">
               <div className="mb-2"><strong>Summary:</strong> {backstory.summary}</div>
               <div className="mb-2"><strong>Traits:</strong> {backstory.traits.join(", ")}</div>
               <div className="mb-2"><strong>Ideals:</strong> {backstory.ideals.join(", ")}</div>
@@ -55,6 +54,9 @@ export default function BackstoryPanel({
               <div className="prose mt-4 whitespace-pre-wrap">{backstory.prose_markdown}</div>
             </div>
           )}
+          <div className="card-actions">
+            <LoadingButton loading={busyBS} onClick={doBackstory}>Generate backstory</LoadingButton>
+          </div>
         </>
       )}
     </div>

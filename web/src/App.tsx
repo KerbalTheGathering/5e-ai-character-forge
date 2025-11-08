@@ -19,9 +19,12 @@ import BackstoryPanel from "./components/BackstoryPanel";
 // LibraryPanel no longer used; tables replace it
 import MagicItemForm from "./components/MagicItemForm";
 import MagicItemPreview from "./components/MagicItemPreview";
+import SpellForm from "./components/SpellForm";
+import SpellPreview from "./components/SpellPreview";
 import CharLibraryTable from "./components/CharLibraryTable";
 import ItemLibraryTable from "./components/ItemLibraryTable";
-import { generatePortrait, downloadPDF, generateMagicItem, saveMagicItem, listMagicItems, getMagicItem, deleteMagicItem, type MagicItem } from "./api";
+import SpellLibraryTable from "./components/SpellLibraryTable";
+import { generatePortrait, downloadPDF, generateMagicItem, saveMagicItem, listMagicItems, getMagicItem, deleteMagicItem, type MagicItem, generateSpell, saveSpell, listSpells, getSpell, deleteSpell, type Spell } from "./api";
 import Sidebar from "./components/Sidebar";
 
 // Class ability priorities (indices from dnd5eapi)
@@ -73,7 +76,7 @@ export default function App() {
   const [portraitBase64, setPortraitBase64] = useState<string | null>(null);
   const [portraitUrl, setPortraitUrl] = useState<string | null>(null);
   // Nav section
-  type Section = "char-new" | "char-lib" | "item-new" | "item-lib";
+  type Section = "char-new" | "char-lib" | "item-new" | "item-lib" | "spell-new" | "spell-lib";
   const [section, setSection] = useState<Section>("char-new");
 
   // backstory
@@ -99,6 +102,17 @@ export default function App() {
   const [itemTotal, setItemTotal] = useState(0);
   const [itemSearch, setItemSearch] = useState("");
   const [itemSort, setItemSort] = useState("created_desc");
+
+  // spells state
+  const [spell, setSpell] = useState<Spell | null>(null);
+  const [busySpell, setBusySpell] = useState(false);
+  const [spellLib, setSpellLib] = useState<{id:number; name:string; created_at:string}[] | null>(null);
+  const [busySpellLib, setBusySpellLib] = useState(false);
+  const [spellPage, setSpellPage] = useState(1);
+  const spellPageSize = 4;
+  const [spellTotal, setSpellTotal] = useState(0);
+  const [spellSearch, setSpellSearch] = useState("");
+  const [spellSort, setSpellSort] = useState("created_desc");
 
   const [classMap, setClassMap] = useState<Record<string,string>>({});
   const [raceMap, setRaceMap]   = useState<Record<string,string>>({});
@@ -169,6 +183,11 @@ export default function App() {
   async function doLoadItem(id:number) { const res = await getMagicItem(id); setItem(res.item); }
   async function doDeleteItem(id:number) { await deleteMagicItem(id); await doListItemLib(); }
 
+  // spell lib helpers
+  async function doListSpellLib(){ setBusySpellLib(true); try { const res = await listSpells(spellPageSize, spellPage, spellSearch, spellSort); setSpellLib(res.items); setSpellTotal(res.total);} finally { setBusySpellLib(false);} }
+  async function doLoadSpell(id:number){ const res = await getSpell(id); setSpell(res.spell); }
+  async function doDeleteSpell(id:number){ await deleteSpell(id); await doListSpellLib(); }
+
 
   useEffect(() => {
     fetch(`http://localhost:${import.meta.env.VITE_API_PORT ?? 8000}/health`)
@@ -198,6 +217,7 @@ export default function App() {
   useEffect(() => {
     if (section === "char-lib") doListLib();
     if (section === "item-lib") doListItemLib();
+    if (section === "spell-lib") doListSpellLib();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [section]);
 
@@ -212,6 +232,9 @@ export default function App() {
     const t = setTimeout(() => { doListItemLib(); updateUrl(); }, 300);
     return () => clearTimeout(t);
   }, [itemPage, itemSearch, itemSort]);
+  useEffect(() => {
+    if (section !== 'spell-lib') return; const t = setTimeout(()=>{ doListSpellLib(); updateUrl(); }, 300); return ()=>clearTimeout(t);
+  }, [spellPage, spellSearch, spellSort]);
 
   // URL state (section, pages, search, sort)
   useEffect(() => {
@@ -224,9 +247,13 @@ export default function App() {
     const ip = Number(p.get('ip')||'1'); if (ip) setItemPage(ip);
     const is = p.get('is')||''; if (is) setItemSearch(is);
     const io = p.get('io')||''; if (io) setItemSort(io as any);
+    const sp = Number(p.get('sp')||'1'); if (sp) setSpellPage(sp);
+    const ss = p.get('ss')||''; if (ss) setSpellSearch(ss);
+    const so = p.get('so')||''; if (so) setSpellSort(so as any);
     // initial lists
     if (sec === 'char-lib') doListLib();
     if (sec === 'item-lib') doListItemLib();
+    if (sec === 'spell-lib') doListSpellLib();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -235,6 +262,7 @@ export default function App() {
     p.set('sec', section);
     p.set('cp', String(charPage)); p.set('cs', charSearch); p.set('co', charSort);
     p.set('ip', String(itemPage)); p.set('is', itemSearch); p.set('io', itemSort);
+    p.set('sp', String(spellPage)); p.set('ss', spellSearch); p.set('so', spellSort);
     history.replaceState(null, '', `${location.pathname}?${p.toString()}`);
   }
 
@@ -289,7 +317,7 @@ export default function App() {
         length: lengthOpt,
         include_hooks: includeHooks,
         draft: namedDraft,
-      });
+      }, engine);
       setBackstory(result);
       try { const { useToast } = await import('./components/Toast'); useToast().push('Backstory ready', 'success'); } catch {}
     } finally { setBusyBS(false); }
@@ -355,7 +383,7 @@ export default function App() {
   async function doPortrait() {
     if (!draft) return;
     const namedDraft = withName(draft);
-    const blob = await generatePortrait(namedDraft, backstory);
+    const blob = await generatePortrait(namedDraft, backstory, engine);
     const url = URL.createObjectURL(blob);
     setPortraitUrl(url);
     // also hold base64 for saving/export
@@ -368,16 +396,18 @@ export default function App() {
 
   // Magic item generation/save
   async function doGenerateItem(input: { name?: string; item_type?: string; rarity?: string; requires_attunement?: boolean; prompt?: string }) {
-    try { setBusyItem(true); const it = await generateMagicItem(input); setItem(it); }
+    try { setBusyItem(true); const it = await generateMagicItem(input, engine); setItem(it); }
     finally { setBusyItem(false); }
   }
   async function doSaveItem() { if (!item) return; const res = await saveMagicItem(item); await doListItemLib(); try { const { useToast } = await import('./components/Toast'); useToast().push(`Saved Item #${res.id}: ${res.name}`, 'success'); } catch {} }
 
   const [navExpanded, setNavExpanded] = useState(true);
+  const [engine, setEngine] = useState<'google'|'local'>(()=> (localStorage.getItem('engine') as any) || 'google');
+  useEffect(()=>{ localStorage.setItem('engine', engine); }, [engine]);
 
   return (
     <div className="min-h-screen app-bg text-slate-100 flex">
-      <Sidebar expanded={navExpanded} setExpanded={setNavExpanded} section={section} onSelect={setSection} apiOk={apiOk} />
+      <Sidebar expanded={navExpanded} setExpanded={setNavExpanded} section={section} onSelect={setSection} apiOk={apiOk} engine={engine} setEngine={setEngine} />
       <div className="p-6 flex-1">
         {section === "char-new" && (
           <div className="grid gap-6 md:grid-cols-2">
@@ -414,6 +444,21 @@ export default function App() {
                 />
             </GlassCard>
             <GlassCard>
+                <h2 className="text-xl font-semibold mb-3">Backstory</h2>
+                <BackstoryPanel
+                  draft={draft}
+                  tone={tone}
+                  setTone={setTone}
+                  lengthOpt={lengthOpt}
+                  setLengthOpt={setLengthOpt}
+                  includeHooks={includeHooks}
+                  setIncludeHooks={setIncludeHooks}
+                  busyBS={busyBS}
+                  doBackstory={doBackstory}
+                  backstory={backstory}
+                />
+            </GlassCard>
+            <GlassCard>
                 <h2 className="text-xl font-semibold mb-3">Draft Sheet</h2>
                 {!draft ? (
                   <p className="text-slate-300">No draft yet.</p>
@@ -432,21 +477,6 @@ export default function App() {
                   />
                 )}
               </GlassCard>
-              <GlassCard>
-                <h2 className="text-xl font-semibold mb-3">Backstory</h2>
-                <BackstoryPanel
-                  draft={draft}
-                  tone={tone}
-                  setTone={setTone}
-                  lengthOpt={lengthOpt}
-                  setLengthOpt={setLengthOpt}
-                  includeHooks={includeHooks}
-                  setIncludeHooks={setIncludeHooks}
-                  busyBS={busyBS}
-                  doBackstory={doBackstory}
-                  backstory={backstory}
-                />
-            </GlassCard>
           </div>
         )}
 
@@ -459,6 +489,18 @@ export default function App() {
             <GlassCard>
               <h2 className="text-xl font-semibold mb-3">Preview</h2>
               <MagicItemPreview item={item} onSave={doSaveItem} />
+            </GlassCard>
+          </div>
+        )}
+        {section === "spell-new" && (
+          <div className="grid gap-6 md:grid-cols-1">
+            <GlassCard>
+              <h2 className="text-xl font-semibold mb-3">Create New Spell</h2>
+              <SpellForm onGenerate={async (input)=>{ try{ setBusySpell(true); const sp = await generateSpell(input, engine); setSpell(sp);} finally{ setBusySpell(false);} }} busy={busySpell} />
+            </GlassCard>
+            <GlassCard>
+              <h2 className="text-xl font-semibold mb-3">Preview</h2>
+              <SpellPreview spell={spell} onSave={async ()=>{ if(!spell) return; const res = await saveSpell(spell); await doListSpellLib(); }} />
             </GlassCard>
           </div>
         )}
@@ -521,6 +563,31 @@ export default function App() {
                 onPageChange={(p)=>{ setItemPage(p); doListItemLib(); }}
                 onSearchChange={(q)=>{ setItemSearch(q); setItemPage(1); doListItemLib(); }}
                 onSortChange={(s)=>{ setItemSort(s); setItemPage(1); doListItemLib(); }}
+              />
+            </GlassCard>
+          </div>
+        )}
+        {section === "spell-lib" && (
+          <div className="grid gap-6 md:grid-cols-1">
+            <GlassCard>
+              <h2 className="text-xl font-semibold mb-3">Preview</h2>
+              <SpellPreview spell={spell} onSave={()=>{}} />
+            </GlassCard>
+            <GlassCard>
+              <SpellLibraryTable
+                rows={spellLib}
+                total={spellTotal}
+                page={spellPage}
+                pageSize={spellPageSize}
+                search={spellSearch}
+                sort={spellSort}
+                busy={busySpellLib}
+                onRefresh={doListSpellLib}
+                onSelect={doLoadSpell}
+                onDelete={doDeleteSpell}
+                onPageChange={(p)=>{ setSpellPage(p); doListSpellLib(); }}
+                onSearchChange={(q)=>{ setSpellSearch(q); setSpellPage(1); doListSpellLib(); }}
+                onSortChange={(s)=>{ setSpellSort(s); setSpellPage(1); doListSpellLib(); }}
               />
             </GlassCard>
           </div>

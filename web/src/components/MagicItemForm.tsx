@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { MagicItem } from "../api";
+import LoadingButton from "./LoadingButton";
 
 export default function MagicItemForm({
   onGenerate,
@@ -44,9 +45,9 @@ export default function MagicItemForm({
         <textarea className="glass-input" rows={6} placeholder="Theme, lore, constraints, mechanics..." value={prompt} onChange={(e)=>setPrompt(e.target.value)} />
       </div>
       <div className="card-actions">
-        <button className={`btn ${busy ? 'btn-disabled':''}`} onClick={()=>onGenerate({ name, item_type: itemType, rarity, requires_attunement: attune, prompt })}>
-          {busy ? 'Generating…' : 'Generate Item'}
-        </button>
+        <LoadingButton loading={busy} onClick={()=>onGenerate({ name, item_type: itemType, rarity, requires_attunement: attune, prompt })}>
+          Generate Item
+        </LoadingButton>
       </div>
     </div>
   );

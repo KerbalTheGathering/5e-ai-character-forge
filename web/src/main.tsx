@@ -6,7 +6,29 @@ import { ToastProvider } from './components/Toast'
 
 const rootEl = document.getElementById('root')!
 
-const Fallback = (
+function attachInteractiveEffects() {
+  const selector = '.btn, .nav-btn, .tab, .engine-toggle';
+  // Cursor-following highlight for glass buttons
+  document.addEventListener('pointermove', (e) => {
+    const target = (e.target as Element).closest?.(selector) as HTMLElement | null;
+    if (!target) return;
+    const rect = target.getBoundingClientRect();
+    target.style.setProperty('--mx', `${e.clientX - rect.left}px`);
+    target.style.setProperty('--my', `${e.clientY - rect.top}px`);
+  });
+  document.addEventListener(
+    'pointerleave',
+    (e) => {
+      const target = (e.target as Element).closest?.(selector) as HTMLElement | null;
+      if (!target) return;
+      target.style.removeProperty('--mx');
+      target.style.removeProperty('--my');
+    },
+    true
+  );
+}
+
+createRoot(rootEl).render(
   <StrictMode>
     <ToastProvider>
       <App />
@@ -14,22 +36,4 @@ const Fallback = (
   </StrictMode>
 )
 
-;(async () => {
-  try {
-    const rq = await import('@tanstack/react-query')
-    const dev = await import('@tanstack/react-query-devtools')
-    const qc = new rq.QueryClient()
-    createRoot(rootEl).render(
-      <StrictMode>
-        <rq.QueryClientProvider client={qc}>
-          <ToastProvider>
-            <App />
-          </ToastProvider>
-          <dev.ReactQueryDevtools initialIsOpen={false} />
-        </rq.QueryClientProvider>
-      </StrictMode>
-    )
-  } catch {
-    createRoot(rootEl).render(Fallback)
-  }
-})()
+attachInteractiveEffects()

@@ -1,4 +1,5 @@
 import type { Ability, AbilitySet } from "../api";
+import LoadingButton from "./LoadingButton";
 
 const ABILS: Ability[] = ["STR","DEX","CON","INT","WIS","CHA"];
 
@@ -36,9 +37,7 @@ export default function AbilitiesPanel({
             ))}
           </div>
           <div className="card-actions">
-            <button disabled={!canGenerate || busy} onClick={doGenerate} className={`btn ${canGenerate && !busy ? "" : "btn-disabled"}`}>
-              {busy ? "Generating…" : "Generate draft"}
-            </button>
+            <LoadingButton loading={busy} disabled={!canGenerate} onClick={doGenerate}>Generate draft</LoadingButton>
           </div>
         </>
       )}
