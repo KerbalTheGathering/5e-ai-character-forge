@@ -5,7 +5,7 @@ Generate playable D&D 5e characters with AI backstories, portraits, spells, and 
 – API: http://localhost:8000
 – Web: http://localhost:5173
 
-![New Character Screen](resources/character-screen-new.png)
+![New Character Screen](resources/character-screen-new-20251108.png)
 
 ![Library Screen](resources/character-screen-library.png)
 
