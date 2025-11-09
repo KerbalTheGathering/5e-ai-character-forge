@@ -90,7 +90,9 @@ export default function DraftPanel({
                   .join(" · ")}
               </div>
             )}
-            <div className="mb-2">Backstory: {backstory ? backstory.summary : "—"}</div>
+            <div className="mb-2" style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
+              <strong>Backstory:</strong> {backstory ? backstory.summary : "—"}
+            </div>
           </div>
         </div>
       </GlassCard>

@@ -83,9 +83,10 @@ export default function App() {
   const [section, setSection] = useState<Section>("char-new");
 
   // backstory
-  const [tone, setTone] = useState<Tone>("heroic");
+  const [tone, setTone] = useState<Tone>("custom");
   const [lengthOpt, setLengthOpt] = useState<LengthOpt>("standard");
   const [includeHooks, setIncludeHooks] = useState(true);
+  const [customInspiration, setCustomInspiration] = useState("");
   const [backstory, setBackstory] = useState<BackstoryResult | null>(null);
   const [busyBS, setBusyBS] = useState(false);
   const [lib, setLib] = useState<{id:number; name:string; created_at:string}[] | null>(null);
@@ -330,6 +331,7 @@ export default function App() {
         tone,
         length: lengthOpt,
         include_hooks: includeHooks,
+        custom_inspiration: tone === "custom" && customInspiration.trim() ? customInspiration.trim() : null,
         draft: namedDraft,
       }, engine);
       setBackstory(result);
@@ -488,6 +490,8 @@ export default function App() {
                         setLengthOpt={setLengthOpt}
                         includeHooks={includeHooks}
                         setIncludeHooks={setIncludeHooks}
+                        customInspiration={customInspiration}
+                        setCustomInspiration={setCustomInspiration}
                         busyBS={busyBS}
                         doBackstory={doBackstory}
                         backstory={backstory}

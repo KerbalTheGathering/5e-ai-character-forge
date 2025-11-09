@@ -54,9 +54,10 @@ class CharacterDraft(BaseModel):
 # ---------- Backstory ----------
 class BackstoryInput(BaseModel):
     name: Optional[str] = None
-    tone: Literal["heroic","grimdark","whimsical","noir","epic"] = "heroic"
+    tone: Literal["heroic","grimdark","whimsical","noir","epic","custom"] = "custom"
     length: Literal["short","standard","long"] = "standard"
     include_hooks: bool = True
+    custom_inspiration: Optional[str] = None
     draft: CharacterDraft
 
 class BackstoryResult(BaseModel):

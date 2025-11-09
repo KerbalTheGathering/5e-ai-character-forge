@@ -77,13 +77,14 @@ export async function listBackgrounds(): Promise<APIRef[]> {
 }
 
 // Backstory
-export type Tone = "heroic" | "grimdark" | "whimsical" | "noir" | "epic";
+export type Tone = "heroic" | "grimdark" | "whimsical" | "noir" | "epic" | "custom";
 export type LengthOpt = "short" | "standard" | "long";
 export interface BackstoryInput {
   name?: string | null;
   tone: Tone;
   length: LengthOpt;
   include_hooks: boolean;
+  custom_inspiration?: string | null;
   draft: CharacterDraft;
 }
 export interface BackstoryResult {
