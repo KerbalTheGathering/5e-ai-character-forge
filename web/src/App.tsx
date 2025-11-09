@@ -17,6 +17,7 @@ import PickersPanel from "./components/PickersPanel";
 import AbilitiesPanel from "./components/AbilitiesPanel";
 import DraftPanel from "./components/DraftPanel";
 import BackstoryPanel from "./components/BackstoryPanel";
+import PortraitPanel from "./components/PortraitPanel";
 // LibraryPanel no longer used; tables replace it
 import MagicItemForm from "./components/MagicItemForm";
 import MagicItemPreview from "./components/MagicItemPreview";
@@ -24,6 +25,7 @@ import SpellForm from "./components/SpellForm";
 import SpellPreview from "./components/SpellPreview";
 import CreatureForm from "./components/CreatureForm";
 import CreaturePreview from "./components/CreaturePreview";
+import CreatureImagePanel from "./components/CreatureImagePanel";
 import CharLibraryTable from "./components/CharLibraryTable";
 import ItemLibraryTable from "./components/ItemLibraryTable";
 import SpellLibraryTable from "./components/SpellLibraryTable";
@@ -33,6 +35,7 @@ import { generatePortrait, downloadPDF, generateMagicItem, saveMagicItem, listMa
 import Sidebar from "./components/Sidebar";
 import ProgressionPanel from "./components/ProgressionPanel";
 import LoadingButton from "./components/LoadingButton";
+import { useToast } from "./components/Toast";
 
 // Class ability priorities (indices from dnd5eapi)
 const CLASS_PRIORITIES: Record<string, Ability[]> = {
@@ -64,6 +67,7 @@ function randPick<T>(arr: T[]): T {
 }
 
 export default function App() {
+  const toast = useToast();
   const [apiOk, setApiOk] = useState<boolean | null>(null);
   const [classes, setClasses] = useState<APIRef[] | null>(null);
   const [races, setRaces] = useState<APIRef[] | null>(null);
@@ -127,6 +131,7 @@ export default function App() {
   const [busyCreature, setBusyCreature] = useState(false);
   const [creatureLib, setCreatureLib] = useState<{id:number; name:string; created_at:string}[] | null>(null);
   const [busyCreatureLib, setBusyCreatureLib] = useState(false);
+  const [busyCreaturePortrait, setBusyCreaturePortrait] = useState(false);
   const [creaturePage, setCreaturePage] = useState(1);
   const creaturePageSize = 8;
   const [creatureTotal, setCreatureTotal] = useState(0);
@@ -134,12 +139,21 @@ export default function App() {
   const [creatureSort, setCreatureSort] = useState("created_desc");
   const [creaturePortraitBase64, setCreaturePortraitBase64] = useState<string | null>(null);
   const [creaturePortraitUrl, setCreaturePortraitUrl] = useState<string | null>(null);
+  // creature creation tabs
+  const [creatureTab, setCreatureTab] = useState<'attributes'|'image'>("attributes");
+  // creature portrait state
+  const [creaturePortraitPrompt, setCreaturePortraitPrompt] = useState<string>("");
+  const [useCreatureDescriptionPrompt, setUseCreatureDescriptionPrompt] = useState<boolean>(false);
 
   const [classMap, setClassMap] = useState<Record<string,string>>({});
   const [raceMap, setRaceMap]   = useState<Record<string,string>>({});
   const [bgMap, setBgMap]       = useState<Record<string,string>>({});
   // creation left-panel tabs
-  const [createTab, setCreateTab] = useState<'pick'|'prog'|'story'>("pick");
+  const [createTab, setCreateTab] = useState<'pick'|'prog'|'story'|'portrait'>("pick");
+  // portrait state
+  const [portraitPrompt, setPortraitPrompt] = useState<string>("");
+  const [useBackstoryPrompt, setUseBackstoryPrompt] = useState<boolean>(false);
+  const [busyPortrait, setBusyPortrait] = useState(false);
 
   function withName(d: CharacterDraft): CharacterDraft {
     const cleaned = charName.trim();
@@ -235,7 +249,7 @@ export default function App() {
     await doListLib();
     if (draft && draft.name) setDraft(null);
   }
-  function doCloseChar() { setDraft(null); setBackstory(null); setCharName(""); setPortraitBase64(null); if (portraitUrl) { try{ URL.revokeObjectURL(portraitUrl);}catch{}; setPortraitUrl(null); } setProgPlan(null); }
+  function doCloseChar() { setDraft(null); setBackstory(null); setCharName(""); setPortraitBase64(null); if (portraitUrl) { try{ URL.revokeObjectURL(portraitUrl);}catch{}; setPortraitUrl(null); } setProgPlan(null); setPortraitPrompt(""); setUseBackstoryPrompt(false); }
   
   // Reset all state when navigating to a creation page
   function resetToNewCreation() {
@@ -254,6 +268,8 @@ export default function App() {
     if (portraitUrl) { try{ URL.revokeObjectURL(portraitUrl);}catch{}; setPortraitUrl(null); }
     setProgPlan(null);
     setCreateTab("pick");
+    setPortraitPrompt("");
+    setUseBackstoryPrompt(false);
     // Magic item state
     setItem(null);
     // Spell state
@@ -262,6 +278,9 @@ export default function App() {
     setCreature(null);
     setCreaturePortraitBase64(null);
     if (creaturePortraitUrl) { try{ URL.revokeObjectURL(creaturePortraitUrl);}catch{}; setCreaturePortraitUrl(null); }
+    setCreatureTab("attributes");
+    setCreaturePortraitPrompt("");
+    setUseCreatureDescriptionPrompt(false);
   }
 
   // Magic item library helpers
@@ -302,15 +321,23 @@ export default function App() {
   }
   async function doCreaturePortrait() {
     if (!creature) return;
-    const blob = await generateCreaturePortrait(creature, engine);
-    const url = URL.createObjectURL(blob);
-    setCreaturePortraitUrl(url);
-    // also hold base64 for saving/export
-    const arrayBuffer = await blob.arrayBuffer();
-    const bytes = new Uint8Array(arrayBuffer);
-    let binary = ""; for (let i=0;i<bytes.length;i++) binary += String.fromCharCode(bytes[i]);
-    setCreaturePortraitBase64(btoa(binary));
-    try { const { useToast } = await import('./components/Toast'); useToast().push('Creature portrait generated', 'success'); } catch {}
+    try {
+      setBusyCreaturePortrait(true);
+      const blob = await generateCreaturePortrait(creature, engine);
+      const url = URL.createObjectURL(blob);
+      setCreaturePortraitUrl(url);
+      // also hold base64 for saving/export
+      const arrayBuffer = await blob.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
+      let binary = ""; for (let i=0;i<bytes.length;i++) binary += String.fromCharCode(bytes[i]);
+      setCreaturePortraitBase64(btoa(binary));
+      try { const { useToast } = await import('./components/Toast'); useToast().push('Creature portrait generated', 'success'); } catch {}
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to generate creature portrait';
+      toast.push(`Error: ${errorMessage}`, 'error');
+    } finally {
+      setBusyCreaturePortrait(false);
+    }
   }
 
   // progression is attached to character draft now; no separate library
@@ -426,6 +453,8 @@ export default function App() {
     setCharName("");
     setPortraitBase64(null);
     if (portraitUrl) { try{ URL.revokeObjectURL(portraitUrl);}catch{}; setPortraitUrl(null); }
+    setPortraitPrompt("");
+    setUseBackstoryPrompt(false);
   }
   //function scoreFor(i: number){ return abilities ? abilities.scores[i] : 10; }
 
@@ -449,6 +478,8 @@ export default function App() {
       setBackstory(null);
       setPortraitBase64(null);
       if (portraitUrl) { try{ URL.revokeObjectURL(portraitUrl);}catch{}; setPortraitUrl(null); }
+      setPortraitPrompt("");
+      setUseBackstoryPrompt(false);
     } finally { setBusy(false); }
   }
 
@@ -467,8 +498,13 @@ export default function App() {
         draft: namedDraft,
       }, engine);
       setBackstory(result);
-      try { const { useToast } = await import('./components/Toast'); useToast().push('Backstory ready', 'success'); } catch {}
-    } finally { setBusyBS(false); }
+      toast.push('Backstory generated successfully', 'success');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to generate backstory';
+      toast.push(`Error: ${errorMessage}`, 'error');
+    } finally { 
+      setBusyBS(false); 
+    }
   }
 
   async function doQuickNPC() {
@@ -511,6 +547,8 @@ export default function App() {
       setBackstory(null);
       setPortraitBase64(null);
       if (portraitUrl) { try{ URL.revokeObjectURL(portraitUrl);}catch{}; setPortraitUrl(null); }
+      setPortraitPrompt("");
+      setUseBackstoryPrompt(false);
 
       // 5) optional quick backstory (short, heroic)
       if (GOOGLE_KEY_PRESENT) {
@@ -530,16 +568,47 @@ export default function App() {
 
   async function doPortrait() {
     if (!draft) return;
-    const namedDraft = withName(draft);
-    const blob = await generatePortrait(namedDraft, backstory, engine);
-    const url = URL.createObjectURL(blob);
-    setPortraitUrl(url);
-    // also hold base64 for saving/export
-    const arrayBuffer = await blob.arrayBuffer();
-    const bytes = new Uint8Array(arrayBuffer);
-    let binary = ""; for (let i=0;i<bytes.length;i++) binary += String.fromCharCode(bytes[i]);
-    setPortraitBase64(btoa(binary));
-    try { const { useToast } = await import('./components/Toast'); useToast().push('Portrait generated', 'success'); } catch {}
+    try {
+      setBusyPortrait(true);
+      const namedDraft = withName(draft);
+      // Revoke old URL before creating new one
+      if (portraitUrl) {
+        try { URL.revokeObjectURL(portraitUrl); } catch {}
+      }
+      // Use backstory as prompt if checkbox is checked, otherwise use custom prompt
+      let customPrompt: string | null = null;
+      if (useBackstoryPrompt && backstory) {
+        // Use backstory prose as the prompt
+        customPrompt = backstory.prose_markdown;
+      } else if (!useBackstoryPrompt && portraitPrompt.trim()) {
+        // Use custom text area prompt
+        customPrompt = portraitPrompt.trim();
+      }
+      const blob = await generatePortrait(namedDraft, backstory, engine, customPrompt);
+      const url = URL.createObjectURL(blob);
+      setPortraitUrl(url);
+      // also hold base64 for saving/export
+      const arrayBuffer = await blob.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
+      let binary = ""; for (let i=0;i<bytes.length;i++) binary += String.fromCharCode(bytes[i]);
+      setPortraitBase64(btoa(binary));
+      toast.push('Portrait generated successfully', 'success');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to generate portrait';
+      toast.push(`Error: ${errorMessage}`, 'error');
+    } finally {
+      setBusyPortrait(false);
+    }
+  }
+
+  async function doAddPortraitToDraft() {
+    if (!portraitBase64) {
+      toast.push('No portrait generated yet. Generate a portrait first.', 'error');
+      return;
+    }
+    // Portrait is already stored in portraitBase64, which is used when saving
+    // This function just confirms the portrait is added to the draft
+    toast.push('Portrait added to draft', 'success');
   }
 
   // Magic item generation/save
@@ -593,7 +662,7 @@ export default function App() {
             <div className="card-flex">
               <GlassCard className="mb-3">
                 <Tabs
-                  tabs={[{key:'pick',label:'Pick & Abilities'},{key:'story',label:'Backstory'},{key:'prog',label:'Progression'}]}
+                  tabs={[{key:'pick',label:'Pick & Abilities'},{key:'story',label:'Backstory'},{key:'portrait',label:'Portrait'},{key:'prog',label:'Progression'}]}
                   active={createTab}
                   onChange={(k)=>setCreateTab(k as any)}
                 />
@@ -668,6 +737,22 @@ export default function App() {
                     />
                   </div>
                 )}
+                {createTab === 'portrait' && (
+                  <div style={{height:'100%'}}>
+                    <PortraitPanel
+                      draft={draft}
+                      portraitUrl={portraitUrl}
+                      portraitPrompt={portraitPrompt}
+                      setPortraitPrompt={setPortraitPrompt}
+                      useBackstoryPrompt={useBackstoryPrompt}
+                      setUseBackstoryPrompt={setUseBackstoryPrompt}
+                      backstory={backstory}
+                      busyPortrait={busyPortrait}
+                      onGeneratePortrait={doPortrait}
+                      onAddToDraft={doAddPortraitToDraft}
+                    />
+                  </div>
+                )}
               </div>
             </div>
             <GlassCard>
@@ -685,7 +770,6 @@ export default function App() {
                     downloadMarkdown={(d,b)=>downloadMarkdown(d,b,progPlan)}
                     doSave={doSave}
                     portraitUrl={portraitUrl}
-                    onGeneratePortrait={doPortrait}
                     onDownloadPDF={()=>downloadPDF(withName(draft), backstory, portraitBase64, progPlan)}
                   />
                 </GlassCard>
@@ -746,12 +830,32 @@ export default function App() {
           <div className="grid gap-6 md:grid-cols-2 fill-grid">
             <div className="card-flex">
               <GlassCard className="mb-3">
-                <h2 className="text-xl font-semibold mb-3">Create New Creature</h2>
+                <Tabs
+                  tabs={[{key:'attributes',label:'Attributes'},{key:'image',label:'Image'}]}
+                  active={creatureTab}
+                  onChange={(k)=>setCreatureTab(k as any)}
+                />
               </GlassCard>
               <div className="flex-scroll">
-                <GlassCard>
-                  <CreatureForm onGenerate={async (input)=>{ try{ setBusyCreature(true); const cr = await generateCreature(input, engine); setCreature(cr); setCreaturePortraitBase64(null); if (creaturePortraitUrl) { try{ URL.revokeObjectURL(creaturePortraitUrl);}catch{}; setCreaturePortraitUrl(null); } } finally{ setBusyCreature(false);} }} busy={busyCreature} />
-                </GlassCard>
+                {creatureTab === 'attributes' && (
+                  <GlassCard>
+                    <CreatureForm onGenerate={async (input)=>{ try{ setBusyCreature(true); const cr = await generateCreature(input, engine); setCreature(cr); setCreaturePortraitBase64(null); if (creaturePortraitUrl) { try{ URL.revokeObjectURL(creaturePortraitUrl);}catch{}; setCreaturePortraitUrl(null); } } finally{ setBusyCreature(false);} }} busy={busyCreature} />
+                  </GlassCard>
+                )}
+                {creatureTab === 'image' && (
+                  <div style={{height:'100%'}}>
+                    <CreatureImagePanel
+                      creature={creature}
+                      portraitUrl={creaturePortraitUrl}
+                      portraitPrompt={creaturePortraitPrompt}
+                      setPortraitPrompt={setCreaturePortraitPrompt}
+                      useDescriptionPrompt={useCreatureDescriptionPrompt}
+                      setUseDescriptionPrompt={setUseCreatureDescriptionPrompt}
+                      busyPortrait={busyCreaturePortrait}
+                      onGeneratePortrait={doCreaturePortrait}
+                    />
+                  </div>
+                )}
               </div>
             </div>
             <GlassCard>
@@ -763,7 +867,6 @@ export default function App() {
                   <CreaturePreview 
                     creature={creature} 
                     portraitUrl={creaturePortraitUrl}
-                    onGeneratePortrait={doCreaturePortrait}
                     onSave={async ()=>{ if(!creature) return; await saveCreature(creature, creaturePortraitBase64); await doListCreatureLib(); try { const { useToast } = await import('./components/Toast'); useToast().push(`Saved Creature: ${creature.name}`, 'success'); } catch {} }} 
                   />
                 </GlassCard>
@@ -807,7 +910,6 @@ export default function App() {
                     downloadMarkdown={(d,b)=>downloadMarkdown(d,b,progPlan)}
                     doSave={doSave}
                     portraitUrl={portraitUrl}
-                    onGeneratePortrait={doPortrait}
                     onDownloadPDF={()=>downloadPDF(withName(draft), backstory, portraitBase64, progPlan)}
                   />
                 </GlassCard>
@@ -912,7 +1014,6 @@ export default function App() {
                   <CreaturePreview 
                     creature={creature} 
                     portraitUrl={creaturePortraitUrl}
-                    onGeneratePortrait={doCreaturePortrait}
                     onSave={()=>{}} 
                   />
                 </GlassCard>

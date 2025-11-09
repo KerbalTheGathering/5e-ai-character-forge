@@ -5,13 +5,11 @@ import GlassCard from "./GlassCard";
 export default function CreaturePreview({ 
   creature, 
   onSave, 
-  portraitUrl, 
-  onGeneratePortrait 
+  portraitUrl
 }: { 
   creature: Creature | null; 
   onSave: ()=>void | Promise<void>;
   portraitUrl?: string | null;
-  onGeneratePortrait?: ()=>void | Promise<void>;
 }){
   if (!creature) return <p className="text-slate-300">No creature generated yet.</p>;
   return (
@@ -105,11 +103,6 @@ export default function CreaturePreview({
 
       {/* Bottom: actions anchored right */}
       <div className="card-actions">
-        {onGeneratePortrait && (
-          <LoadingButton onClick={onGeneratePortrait}>
-            {portraitUrl ? 'Regenerate Portrait' : 'Generate Portrait'}
-          </LoadingButton>
-        )}
         <LoadingButton onClick={()=>downloadCreatureJSON(creature)}>Download JSON</LoadingButton>
         <LoadingButton onClick={()=>downloadCreatureMarkdown(creature)}>Download Markdown</LoadingButton>
         <LoadingButton onClick={onSave}>Save to Library</LoadingButton>

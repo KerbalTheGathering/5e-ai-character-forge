@@ -104,8 +104,8 @@ body { margin: 0; font-family: InterVar, ui-sans-serif, system-ui, -apple-system
 .scroll-area { max-height: 520px; min-height: 260px; overflow-y: auto; padding-right: .5rem; }
 
 /* Toasts */
-.toast { padding:.5rem .75rem; border-radius:.6rem; border:1px solid rgba(192,192,192,.25); color:#e2e8f0; background:linear-gradient(180deg, rgba(30,30,30,.9), rgba(18,18,18,.9)); box-shadow: 0 6px 18px rgba(0,0,0,.4); }
-.toast-success { border-color: rgba(16,185,129,.5); }
+.toast { padding:.5rem .75rem; border-radius:.6rem; border:1px solid rgba(192,192,192,.35); color:#e2e8f0; background:linear-gradient(180deg, rgba(30,30,30,.9), rgba(18,18,18,.9)); box-shadow: 0 6px 18px rgba(0,0,0,.4); }
+.toast-success { border-color: rgba(185,28,28,.6); }
 .toast-error { border-color: rgba(185,28,28,.6); }
 .toast-info { border-color: rgba(192,192,192,.35); }
 
@@ -209,6 +209,13 @@ body { margin: 0; font-family: InterVar, ui-sans-serif, system-ui, -apple-system
 /* Cards subtle lift on hover */
 .card { transition: box-shadow .25s ease, transform .25s ease; }
 .card:hover { transform: translateY(-1px); box-shadow: 0 12px 30px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.05); }
+
+/* Red gradient card from top right - subtle */
+.card.card-red-gradient { background: 
+  radial-gradient(1400px 600px at 100% -40%, rgba(185,28,28,.08), transparent 62%),
+  radial-gradient(900px 400px at -20% 120%, rgba(185,28,28,.04), transparent 65%),
+  linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
+}
 
 /* Respect reduced motion preferences */
 @media (prefers-reduced-motion: reduce) {

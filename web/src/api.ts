@@ -329,11 +329,11 @@ export function downloadSpellMarkdown(spell: Spell) {
   const blob = new Blob([md], { type:'text/markdown' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${spell.name.replace(/\s+/g,'_')}.md`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
 }
 
-export async function generatePortrait(draft: CharacterDraft, backstory?: BackstoryResult | null, engine: 'google'|'local' = 'google'): Promise<Blob> {
+export async function generatePortrait(draft: CharacterDraft, backstory?: BackstoryResult | null, engine: 'google'|'local' = 'google', customPrompt?: string | null): Promise<Blob> {
   const res = await fetch(`http://localhost:${import.meta.env.VITE_API_PORT ?? 8000}/api/portrait?engine=${engine}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ draft, backstory: backstory ?? null }),
+    body: JSON.stringify({ draft, backstory: backstory ?? null, custom_prompt: customPrompt ?? null }),
   });
   if (!res.ok) throw new Error(`portrait failed: ${res.status}`);
   return res.blob();

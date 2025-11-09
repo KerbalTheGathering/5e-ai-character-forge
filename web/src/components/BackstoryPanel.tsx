@@ -24,7 +24,11 @@ export default function BackstoryPanel({
   return (
     // Fill parent card height so actions sit at bottom to align with Draft sheet
     <div className="card-flex" style={{ height: '100%' }}>
-      {!draft ? <p className="text-slate-300">Generate a draft first.</p> : (
+      {!draft ? (
+        <GlassCard className="fill-card card-red-gradient">
+          <p className="text-slate-300">Generate a draft first.</p>
+        </GlassCard>
+      ) : (
         <GlassCard className="fill-card">
           <div className="card-flex" style={{ height: '100%' }}>
             <h2 className="text-xl font-semibold mb-3">Backstory</h2>

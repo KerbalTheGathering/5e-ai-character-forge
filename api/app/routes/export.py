@@ -29,17 +29,22 @@ async def rules_proxy(path: str):
 @router.post("/api/portrait")
 async def generate_portrait(payload: ExportInput, engine: str | None = Query(default=None)):
     logger.info("Generating portrait image...")
+    d = payload.draft  # Define d early so it's available for filename generation
     try:
-        logger.info("Constructing portrait prompt...")
-        d = payload.draft
-        name = d.name or "Unnamed Adventurer"
-        abilities = d.abilities
-        bs_text = payload.backstory.prose_markdown[:1200] if payload.backstory else ""
-        prompt = (
-            f"Create a detailed fantasy portrait of a D&D 5e character.\n"
-            f"Name: {name}. Race: {d.race}. Class: {d.cls}. Background: {d.background}. Level: {d.level}.\n"
-            f"Key abilities: STR {abilities.STR}, DEX {abilities.DEX}, CON {abilities.CON}, INT {abilities.INT}, WIS {abilities.WIS}, CHA {abilities.CHA}.\n"
-        )
+        # Use custom prompt if provided, otherwise construct default prompt
+        if payload.custom_prompt and payload.custom_prompt.strip():
+            logger.info("Using custom portrait prompt...")
+            prompt = payload.custom_prompt.strip()
+        else:
+            logger.info("Constructing portrait prompt...")
+            name = d.name or "Unnamed Adventurer"
+            abilities = d.abilities
+            bs_text = payload.backstory.prose_markdown[:1200] if payload.backstory else ""
+            prompt = (
+                f"Create a detailed fantasy portrait of a D&D 5e character.\n"
+                f"Name: {name}. Race: {d.race}. Class: {d.cls}. Background: {d.background}. Level: {d.level}.\n"
+                f"Key abilities: STR {abilities.STR}, DEX {abilities.DEX}, CON {abilities.CON}, INT {abilities.INT}, WIS {abilities.WIS}, CHA {abilities.CHA}.\n"
+            )
     except Exception as e:
         raise HTTPException(400, f"portrait prompt construction failed: {e}")
     try:

@@ -11,7 +11,6 @@ export default function DraftPanel({
   downloadMarkdown,
   doSave,
   portraitUrl,
-  onGeneratePortrait,
   onDownloadPDF,
 }: {
   draft: CharacterDraft;
@@ -22,7 +21,6 @@ export default function DraftPanel({
   downloadMarkdown: (d: CharacterDraft, b?: BackstoryResult | null)=>void | Promise<void>;
   doSave: ()=>void | Promise<void>;
   portraitUrl: string | null;
-  onGeneratePortrait: ()=>void | Promise<void>;
   onDownloadPDF: ()=>void | Promise<void>;
 }){
   return (
@@ -93,7 +91,6 @@ export default function DraftPanel({
 
       {/* Bottom: actions anchored right */}
       <div className="card-actions">
-        <LoadingButton onClick={onGeneratePortrait}>Generate Portrait</LoadingButton>
         <LoadingButton onClick={()=>downloadJSON(draft, backstory)}>Download JSON</LoadingButton>
         <LoadingButton onClick={()=>downloadMarkdown(draft, backstory)}>Download Markdown</LoadingButton>
         <LoadingButton onClick={onDownloadPDF}>Download PDF</LoadingButton>

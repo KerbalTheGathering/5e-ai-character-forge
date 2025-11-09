@@ -75,6 +75,8 @@ class ExportInput(BaseModel):
     backstory: Optional[BackstoryResult] = None
     # Optional progression plan to augment exports (MD/JSON)
     progression: Optional["ProgressionPlan"] = None
+    # Optional custom prompt for portrait generation
+    custom_prompt: Optional[str] = None
 
 # ---------- Portrait & PDF ----------
 class SaveInput(ExportInput):
