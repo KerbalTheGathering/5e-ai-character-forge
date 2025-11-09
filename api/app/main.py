@@ -10,7 +10,7 @@ from .config import PORT, logger
 from . import database # Import the database module to ensure init_db() is called
 
 # Import routers
-from .routes import health, character, backstory, items, spells, progression, library, export
+from .routes import health, character, backstory, items, spells, progression, library, export, creature
 
 app = FastAPI(title="5e-ai-character-forge API", version="0.1.0")
 
@@ -58,6 +58,7 @@ app.include_router(spells.router)
 app.include_router(progression.router)
 app.include_router(library.router)
 app.include_router(export.router)
+app.include_router(creature.router)
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=PORT)

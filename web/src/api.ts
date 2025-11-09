@@ -440,3 +440,109 @@ export async function downloadProgressionPDF(plan: ProgressionPlan) {
   a.href = url; a.download = (res.headers.get('Content-Disposition')?.match(/filename="(.+?)"/)?.[1] ?? 'progression.pdf');
   document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
 }
+
+// ----- Creatures -----
+export interface Creature {
+  name: string;
+  size: string;
+  creature_type: string;
+  challenge_rating: string;
+  armor_class: number;
+  hit_points: number;
+  hit_dice: string;
+  speed: string;
+  ability_scores: AbilityBlock;
+  saving_throws: string[];
+  skills: string[];
+  damage_resistances: string[];
+  damage_immunities: string[];
+  condition_immunities: string[];
+  senses: string;
+  languages: string[];
+  traits: string[];
+  actions: string[];
+  spells: string[];
+  description: string;
+}
+
+export async function generateCreature(input: {
+  name?: string | null;
+  size?: string | null;
+  creature_type?: string | null;
+  challenge_rating?: string | null;
+  base_stat_block?: string | null;
+  prompt?: string | null;
+}, engine: 'google'|'local' = 'google'): Promise<Creature> {
+  const res = await fetch(`http://localhost:${import.meta.env.VITE_API_PORT ?? 8000}/api/creatures/generate?engine=${engine}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input)
+  });
+  if (!res.ok) throw new Error(`creature generate failed: ${res.status}`);
+  return res.json() as Promise<Creature>;
+}
+
+export async function saveCreature(creature: Creature, portrait_base64?: string | null) {
+  const res = await fetch(`http://localhost:${import.meta.env.VITE_API_PORT ?? 8000}/api/creatures/save`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ creature, portrait_base64: portrait_base64 ?? null })
+  });
+  if (!res.ok) throw new Error(`creature save failed: ${res.status}`);
+  return res.json() as Promise<{ id:number; name:string; created_at:string }>;
+}
+
+export async function listCreatures(limit=10, page=1, search='', sort='created_desc') {
+  const q = new URLSearchParams({ limit:String(limit), page:String(page), sort }); if (search) q.set('search', search);
+  const res = await fetch(`http://localhost:${import.meta.env.VITE_API_PORT ?? 8000}/api/creatures/list?${q.toString()}`);
+  if (!res.ok) throw new Error(`creatures list failed: ${res.status}`);
+  return res.json() as Promise<{ items:{id:number; name:string; created_at:string; size?:string; creature_type?:string; challenge_rating?:string}[], total:number }>;
+}
+
+export async function getCreature(id:number) {
+  const res = await fetch(`http://localhost:${import.meta.env.VITE_API_PORT ?? 8000}/api/creatures/get/${id}`);
+  if (!res.ok) throw new Error(`creature get failed: ${res.status}`);
+  return res.json() as Promise<{ id:number; name:string; created_at:string; creature: Creature; portrait_base64?: string | null }>;
+}
+
+export async function deleteCreature(id:number) {
+  const res = await fetch(`http://localhost:${import.meta.env.VITE_API_PORT ?? 8000}/api/creatures/delete/${id}`, { method:'DELETE' });
+  if (!res.ok) throw new Error(`creature delete failed: ${res.status}`);
+  return res.json() as Promise<{ ok:true }>;
+}
+
+export function downloadCreatureJSON(creature: Creature) {
+  const blob = new Blob([JSON.stringify(creature, null, 2)], { type:'application/json' });
+  const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${creature.name.replace(/\s+/g,'_')}.json`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+}
+
+export function downloadCreatureMarkdown(creature: Creature) {
+  const md = `# ${creature.name}\n\n`+
+    `- Size: ${creature.size}\n- Type: ${creature.creature_type}\n- Challenge Rating: ${creature.challenge_rating}\n`+
+    `- Armor Class: ${creature.armor_class}\n- Hit Points: ${creature.hit_points} (${creature.hit_dice})\n- Speed: ${creature.speed}\n\n`+
+    `## Ability Scores\n`+
+    `- STR: ${creature.ability_scores.STR} (${creature.ability_scores.STR_mod >= 0 ? '+' : ''}${creature.ability_scores.STR_mod})\n`+
+    `- DEX: ${creature.ability_scores.DEX} (${creature.ability_scores.DEX_mod >= 0 ? '+' : ''}${creature.ability_scores.DEX_mod})\n`+
+    `- CON: ${creature.ability_scores.CON} (${creature.ability_scores.CON_mod >= 0 ? '+' : ''}${creature.ability_scores.CON_mod})\n`+
+    `- INT: ${creature.ability_scores.INT} (${creature.ability_scores.INT_mod >= 0 ? '+' : ''}${creature.ability_scores.INT_mod})\n`+
+    `- WIS: ${creature.ability_scores.WIS} (${creature.ability_scores.WIS_mod >= 0 ? '+' : ''}${creature.ability_scores.WIS_mod})\n`+
+    `- CHA: ${creature.ability_scores.CHA} (${creature.ability_scores.CHA_mod >= 0 ? '+' : ''}${creature.ability_scores.CHA_mod})\n\n`+
+    `${creature.saving_throws?.length ? `## Saving Throws\n- ${creature.saving_throws.join('\n- ')}\n\n` : ''}`+
+    `${creature.skills?.length ? `## Skills\n- ${creature.skills.join('\n- ')}\n\n` : ''}`+
+    `${creature.damage_resistances?.length ? `## Damage Resistances\n- ${creature.damage_resistances.join(', ')}\n\n` : ''}`+
+    `${creature.damage_immunities?.length ? `## Damage Immunities\n- ${creature.damage_immunities.join(', ')}\n\n` : ''}`+
+    `${creature.condition_immunities?.length ? `## Condition Immunities\n- ${creature.condition_immunities.join(', ')}\n\n` : ''}`+
+    `## Senses\n${creature.senses}\n\n`+
+    `${creature.languages?.length ? `## Languages\n- ${creature.languages.join(', ')}\n\n` : ''}`+
+    `${creature.traits?.length ? `## Traits\n- ${creature.traits.join('\n- ')}\n\n` : ''}`+
+    `${creature.actions?.length ? `## Actions\n- ${creature.actions.join('\n- ')}\n\n` : ''}`+
+    `${creature.spells?.length ? `## Spells\n- ${creature.spells.join(', ')}\n\n` : ''}`+
+    `## Description\n${creature.description}\n`;
+  const blob = new Blob([md], { type:'text/markdown' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${creature.name.replace(/\s+/g,'_')}.md`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+}
+
+export async function generateCreaturePortrait(creature: Creature, engine: 'google'|'local' = 'google'): Promise<Blob> {
+  const res = await fetch(`http://localhost:${import.meta.env.VITE_API_PORT ?? 8000}/api/creatures/portrait?engine=${engine}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ creature }),
+  });
+  if (!res.ok) throw new Error(`creature portrait failed: ${res.status}`);
+  return res.blob();
+}

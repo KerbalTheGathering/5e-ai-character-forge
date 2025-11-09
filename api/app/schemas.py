@@ -166,3 +166,39 @@ class ProgressionPlan(BaseModel):
 
 class ProgressionExport(BaseModel):
     plan: ProgressionPlan
+
+# ---------- Creatures ----------
+class CreatureInput(BaseModel):
+    name: Optional[str] = None
+    size: Optional[str] = None  # Tiny, Small, Medium, Large, Huge, Gargantuan
+    creature_type: Optional[str] = None  # Humanoid, Beast, Undead, etc.
+    challenge_rating: Optional[str] = None  # e.g., "1/4", "1", "5"
+    base_stat_block: Optional[str] = None  # Optional reference to base stat block
+    prompt: Optional[str] = None
+
+class Creature(BaseModel):
+    name: str
+    size: str
+    creature_type: str
+    challenge_rating: str
+    armor_class: int
+    hit_points: int
+    hit_dice: str  # e.g., "5d8 + 10"
+    speed: str  # e.g., "30 ft., climb 30 ft."
+    ability_scores: AbilityBlock
+    saving_throws: list[str] = []
+    skills: list[str] = []
+    damage_resistances: list[str] = []
+    damage_immunities: list[str] = []
+    condition_immunities: list[str] = []
+    senses: str  # e.g., "darkvision 60 ft., passive Perception 12"
+    languages: list[str] = []
+    traits: list[str] = []  # Special traits from the provided list
+    actions: list[str] = []  # Attack descriptions
+    spells: list[str] = []  # Spell names if creature can cast spells
+    description: str  # Flavor text description
+
+class CreatureExport(BaseModel):
+    creature: Creature
+    prompt: Optional[str] = None
+    portrait_base64: Optional[str] = None  # PNG base64 (no data URL prefix)

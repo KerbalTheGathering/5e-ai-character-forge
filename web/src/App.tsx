@@ -22,11 +22,14 @@ import MagicItemForm from "./components/MagicItemForm";
 import MagicItemPreview from "./components/MagicItemPreview";
 import SpellForm from "./components/SpellForm";
 import SpellPreview from "./components/SpellPreview";
+import CreatureForm from "./components/CreatureForm";
+import CreaturePreview from "./components/CreaturePreview";
 import CharLibraryTable from "./components/CharLibraryTable";
 import ItemLibraryTable from "./components/ItemLibraryTable";
 import SpellLibraryTable from "./components/SpellLibraryTable";
+import CreatureLibraryTable from "./components/CreatureLibraryTable";
 // Progression library is now integrated with character save
-import { generatePortrait, downloadPDF, generateMagicItem, saveMagicItem, listMagicItems, getMagicItem, deleteMagicItem, type MagicItem, generateSpell, saveSpell, listSpells, getSpell, deleteSpell, type Spell } from "./api";
+import { generatePortrait, downloadPDF, generateMagicItem, saveMagicItem, listMagicItems, getMagicItem, deleteMagicItem, type MagicItem, generateSpell, saveSpell, listSpells, getSpell, deleteSpell, type Spell, generateCreature, saveCreature, listCreatures, getCreature, deleteCreature, type Creature, generateCreaturePortrait } from "./api";
 import Sidebar from "./components/Sidebar";
 import ProgressionPanel from "./components/ProgressionPanel";
 import LoadingButton from "./components/LoadingButton";
@@ -80,7 +83,7 @@ export default function App() {
   const [portraitBase64, setPortraitBase64] = useState<string | null>(null);
   const [portraitUrl, setPortraitUrl] = useState<string | null>(null);
   // Nav section (progression integrated into character flow)
-  type Section = "home" | "char-new" | "char-lib" | "item-new" | "item-lib" | "spell-new" | "spell-lib";
+  type Section = "home" | "char-new" | "char-lib" | "creature-new" | "creature-lib" | "item-new" | "item-lib" | "spell-new" | "spell-lib";
   const [section, setSection] = useState<Section>("home");
 
   // backstory
@@ -119,6 +122,18 @@ export default function App() {
   const [spellSearch, setSpellSearch] = useState("");
   const [spellSort, setSpellSort] = useState("created_desc");
   const [progPlan, setProgPlan] = useState<import('./api').ProgressionPlan | null>(null);
+  // creatures state
+  const [creature, setCreature] = useState<Creature | null>(null);
+  const [busyCreature, setBusyCreature] = useState(false);
+  const [creatureLib, setCreatureLib] = useState<{id:number; name:string; created_at:string}[] | null>(null);
+  const [busyCreatureLib, setBusyCreatureLib] = useState(false);
+  const [creaturePage, setCreaturePage] = useState(1);
+  const creaturePageSize = 8;
+  const [creatureTotal, setCreatureTotal] = useState(0);
+  const [creatureSearch, setCreatureSearch] = useState("");
+  const [creatureSort, setCreatureSort] = useState("created_desc");
+  const [creaturePortraitBase64, setCreaturePortraitBase64] = useState<string | null>(null);
+  const [creaturePortraitUrl, setCreaturePortraitUrl] = useState<string | null>(null);
 
   const [classMap, setClassMap] = useState<Record<string,string>>({});
   const [raceMap, setRaceMap]   = useState<Record<string,string>>({});
@@ -243,6 +258,10 @@ export default function App() {
     setItem(null);
     // Spell state
     setSpell(null);
+    // Creature state
+    setCreature(null);
+    setCreaturePortraitBase64(null);
+    if (creaturePortraitUrl) { try{ URL.revokeObjectURL(creaturePortraitUrl);}catch{}; setCreaturePortraitUrl(null); }
   }
 
   // Magic item library helpers
@@ -260,6 +279,39 @@ export default function App() {
   async function doLoadSpell(id:number){ const res = await getSpell(id); setSpell(res.spell); }
   async function doDeleteSpell(id:number){ await deleteSpell(id); await doListSpellLib(); if (spell && spell.name) setSpell(null); }
   function doCloseSpell() { setSpell(null); }
+  // creature lib helpers
+  async function doListCreatureLib(){ setBusyCreatureLib(true); try { const res = await listCreatures(creaturePageSize, creaturePage, creatureSearch, creatureSort); setCreatureLib(res.items); setCreatureTotal(res.total);} finally { setBusyCreatureLib(false);} }
+  async function doLoadCreature(id:number){ 
+    const res = await getCreature(id); 
+    setCreature(res.creature);
+    if (res.portrait_base64) {
+      setCreaturePortraitBase64(res.portrait_base64);
+      try { if (creaturePortraitUrl) URL.revokeObjectURL(creaturePortraitUrl); } catch {}
+      const blob = await (async()=>{ const b = atob(res.portrait_base64!); const arr = new Uint8Array(b.length); for(let i=0;i<b.length;i++)arr[i]=b.charCodeAt(i); return new Blob([arr], {type:"image/png"}); })();
+      setCreaturePortraitUrl(URL.createObjectURL(blob));
+    } else { 
+      setCreaturePortraitBase64(null); 
+      if (creaturePortraitUrl) { URL.revokeObjectURL(creaturePortraitUrl); setCreaturePortraitUrl(null);} 
+    }
+  }
+  async function doDeleteCreature(id:number){ await deleteCreature(id); await doListCreatureLib(); if (creature && creature.name) setCreature(null); }
+  function doCloseCreature() { 
+    setCreature(null); 
+    setCreaturePortraitBase64(null);
+    if (creaturePortraitUrl) { try{ URL.revokeObjectURL(creaturePortraitUrl);}catch{}; setCreaturePortraitUrl(null); }
+  }
+  async function doCreaturePortrait() {
+    if (!creature) return;
+    const blob = await generateCreaturePortrait(creature, engine);
+    const url = URL.createObjectURL(blob);
+    setCreaturePortraitUrl(url);
+    // also hold base64 for saving/export
+    const arrayBuffer = await blob.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
+    let binary = ""; for (let i=0;i<bytes.length;i++) binary += String.fromCharCode(bytes[i]);
+    setCreaturePortraitBase64(btoa(binary));
+    try { const { useToast } = await import('./components/Toast'); useToast().push('Creature portrait generated', 'success'); } catch {}
+  }
 
   // progression is attached to character draft now; no separate library
 
@@ -293,6 +345,7 @@ export default function App() {
     if (section === "char-lib") doListLib();
     if (section === "item-lib") doListItemLib();
     if (section === "spell-lib") doListSpellLib();
+    if (section === "creature-lib") doListCreatureLib();
     // progression library removed
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [section]);
@@ -311,13 +364,16 @@ export default function App() {
   useEffect(() => {
     if (section !== 'spell-lib') return; const t = setTimeout(()=>{ doListSpellLib(); updateUrl(); }, 300); return ()=>clearTimeout(t);
   }, [spellPage, spellSearch, spellSort]);
+  useEffect(() => {
+    if (section !== 'creature-lib') return; const t = setTimeout(()=>{ doListCreatureLib(); updateUrl(); }, 300); return ()=>clearTimeout(t);
+  }, [creaturePage, creatureSearch, creatureSort]);
   // removed: progression library debounce
 
   // URL state (section, pages, search, sort)
   useEffect(() => {
     const p = new URLSearchParams(location.search);
     const sec = p.get('sec') as typeof section | null;
-    if (sec && (sec === "home" || sec === "char-new" || sec === "char-lib" || sec === "item-new" || sec === "item-lib" || sec === "spell-new" || sec === "spell-lib")) {
+    if (sec && (sec === "home" || sec === "char-new" || sec === "char-lib" || sec === "creature-new" || sec === "creature-lib" || sec === "item-new" || sec === "item-lib" || sec === "spell-new" || sec === "spell-lib")) {
       setSection(sec);
     }
     const cp = Number(p.get('cp')||'1'); if (cp) setCharPage(cp);
@@ -329,11 +385,15 @@ export default function App() {
     const sp = Number(p.get('sp')||'1'); if (sp) setSpellPage(sp);
     const ss = p.get('ss')||''; if (ss) setSpellSearch(ss);
     const so = p.get('so')||''; if (so) setSpellSort(so as any);
+    const crp = Number(p.get('crp')||'1'); if (crp) setCreaturePage(crp);
+    const crs = p.get('crs')||''; if (crs) setCreatureSearch(crs);
+    const cro = p.get('cro')||''; if (cro) setCreatureSort(cro as any);
     // progression list params removed
     // initial lists
     if (sec === 'char-lib') doListLib();
     if (sec === 'item-lib') doListItemLib();
     if (sec === 'spell-lib') doListSpellLib();
+    if (sec === 'creature-lib') doListCreatureLib();
     // no progression library
     // If no section in URL, default to home
     if (!sec) {
@@ -348,6 +408,7 @@ export default function App() {
     p.set('cp', String(charPage)); p.set('cs', charSearch); p.set('co', charSort);
     p.set('ip', String(itemPage)); p.set('is', itemSearch); p.set('io', itemSort);
     p.set('sp', String(spellPage)); p.set('ss', spellSearch); p.set('so', spellSort);
+    p.set('crp', String(creaturePage)); p.set('crs', creatureSearch); p.set('cro', creatureSort);
     // progression list params removed
     history.replaceState(null, '', `${location.pathname}?${p.toString()}`);
   }
@@ -499,12 +560,18 @@ export default function App() {
         {section === "home" && (
           <div className="max-w-4xl mx-auto">
             <h1 className="text-4xl font-bold mb-8 text-center">Welcome to the Forge</h1>
-            <div className="grid gap-6 md:grid-cols-3">
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
               <GlassCard 
                 className="cursor-pointer hover:bg-white/10 transition-colors text-center py-8"
                 onClick={() => { resetToNewCreation(); setSection("char-new"); }}
               >
                 <h2 className="text-2xl font-semibold">New Character</h2>
+              </GlassCard>
+              <GlassCard 
+                className="cursor-pointer hover:bg-white/10 transition-colors text-center py-8"
+                onClick={() => { resetToNewCreation(); setSection("creature-new"); }}
+              >
+                <h2 className="text-2xl font-semibold">New Creature</h2>
               </GlassCard>
               <GlassCard 
                 className="cursor-pointer hover:bg-white/10 transition-colors text-center py-8"
@@ -534,6 +601,15 @@ export default function App() {
               <div className="flex-scroll">
                 {createTab === 'pick' && (
                   <div className="grid gap-6">
+                    <GlassCard className="mb-3">
+                      <label className="block text-sm mb-1">Character Name</label>
+                      <input
+                        className="glass-input"
+                        placeholder="e.g., Kaelis Stormsinger"
+                        value={charName}
+                        onChange={(e)=>setCharName(e.target.value)}
+                      />
+                    </GlassCard>
                     <GlassCard>
                       <h2 className="text-xl font-semibold mb-2">Pick Class, Race, Background</h2>
                       <PickersPanel
@@ -576,23 +652,20 @@ export default function App() {
                 )}
                 {createTab === 'story' && (
                   <div style={{height:'100%'}}>
-                    <GlassCard className="fill-card">
-                      <h2 className="text-xl font-semibold mb-2">Backstory</h2>
-                      <BackstoryPanel
-                        draft={draft}
-                        tone={tone}
-                        setTone={setTone}
-                        lengthOpt={lengthOpt}
-                        setLengthOpt={setLengthOpt}
-                        includeHooks={includeHooks}
-                        setIncludeHooks={setIncludeHooks}
-                        customInspiration={customInspiration}
-                        setCustomInspiration={setCustomInspiration}
-                        busyBS={busyBS}
-                        doBackstory={doBackstory}
-                        backstory={backstory}
-                      />
-                    </GlassCard>
+                    <BackstoryPanel
+                      draft={draft}
+                      tone={tone}
+                      setTone={setTone}
+                      lengthOpt={lengthOpt}
+                      setLengthOpt={setLengthOpt}
+                      includeHooks={includeHooks}
+                      setIncludeHooks={setIncludeHooks}
+                      customInspiration={customInspiration}
+                      setCustomInspiration={setCustomInspiration}
+                      busyBS={busyBS}
+                      doBackstory={doBackstory}
+                      backstory={backstory}
+                    />
                   </div>
                 )}
               </div>
@@ -646,14 +719,55 @@ export default function App() {
           </div>
         )}
         {section === "spell-new" && (
-          <div className="grid gap-6 md:grid-cols-1">
-            <GlassCard>
-              <h2 className="text-xl font-semibold mb-3">Create New Spell</h2>
-              <SpellForm onGenerate={async (input)=>{ try{ setBusySpell(true); const sp = await generateSpell(input, engine); setSpell(sp);} finally{ setBusySpell(false);} }} busy={busySpell} />
-            </GlassCard>
+          <div className="grid gap-6 md:grid-cols-2 fill-grid">
+            <div className="card-flex">
+              <GlassCard className="mb-3">
+                <h2 className="text-xl font-semibold mb-3">Create New Spell</h2>
+              </GlassCard>
+              <div className="flex-scroll">
+                <GlassCard>
+                  <SpellForm onGenerate={async (input)=>{ try{ setBusySpell(true); const sp = await generateSpell(input, engine); setSpell(sp);} finally{ setBusySpell(false);} }} busy={busySpell} />
+                </GlassCard>
+              </div>
+            </div>
             <GlassCard>
               <h2 className="text-xl font-semibold mb-3">Preview</h2>
-              <SpellPreview spell={spell} onSave={async ()=>{ if(!spell) return; await saveSpell(spell); await doListSpellLib(); }} />
+              {!spell ? (
+                <p className="text-slate-300">No spell generated yet.</p>
+              ) : (
+                <GlassCard>
+                  <SpellPreview spell={spell} onSave={async ()=>{ if(!spell) return; await saveSpell(spell); await doListSpellLib(); try { const { useToast } = await import('./components/Toast'); useToast().push(`Saved Spell: ${spell.name}`, 'success'); } catch {} }} />
+                </GlassCard>
+              )}
+            </GlassCard>
+          </div>
+        )}
+        {section === "creature-new" && (
+          <div className="grid gap-6 md:grid-cols-2 fill-grid">
+            <div className="card-flex">
+              <GlassCard className="mb-3">
+                <h2 className="text-xl font-semibold mb-3">Create New Creature</h2>
+              </GlassCard>
+              <div className="flex-scroll">
+                <GlassCard>
+                  <CreatureForm onGenerate={async (input)=>{ try{ setBusyCreature(true); const cr = await generateCreature(input, engine); setCreature(cr); setCreaturePortraitBase64(null); if (creaturePortraitUrl) { try{ URL.revokeObjectURL(creaturePortraitUrl);}catch{}; setCreaturePortraitUrl(null); } } finally{ setBusyCreature(false);} }} busy={busyCreature} />
+                </GlassCard>
+              </div>
+            </div>
+            <GlassCard>
+              <h2 className="text-xl font-semibold mb-3">Preview</h2>
+              {!creature ? (
+                <p className="text-slate-300">No creature generated yet.</p>
+              ) : (
+                <GlassCard>
+                  <CreaturePreview 
+                    creature={creature} 
+                    portraitUrl={creaturePortraitUrl}
+                    onGeneratePortrait={doCreaturePortrait}
+                    onSave={async ()=>{ if(!creature) return; await saveCreature(creature, creaturePortraitBase64); await doListCreatureLib(); try { const { useToast } = await import('./components/Toast'); useToast().push(`Saved Creature: ${creature.name}`, 'success'); } catch {} }} 
+                  />
+                </GlassCard>
+              )}
             </GlassCard>
           </div>
         )}
@@ -763,6 +877,44 @@ export default function App() {
                 </div>
                 <GlassCard>
                   <SpellPreview spell={spell} onSave={()=>{}} />
+                </GlassCard>
+              </GlassCard>
+            )}
+          </div>
+        )}
+        {section === "creature-lib" && (
+          <div className={`grid gap-6 ${creature ? "md:grid-cols-2 fill-grid" : "md:grid-cols-1"}`}>
+            <GlassCard>
+              <CreatureLibraryTable
+                rows={creatureLib}
+                total={creatureTotal}
+                page={creaturePage}
+                pageSize={creaturePageSize}
+                search={creatureSearch}
+                sort={creatureSort}
+                busy={busyCreatureLib}
+                onRefresh={doListCreatureLib}
+                onSelect={doLoadCreature}
+                onDelete={doDeleteCreature}
+                onPageChange={(p)=>{ setCreaturePage(p); doListCreatureLib(); }}
+                onSearchChange={(q)=>{ setCreatureSearch(q); setCreaturePage(1); doListCreatureLib(); }}
+                onSortChange={(s)=>{ setCreatureSort(s); setCreaturePage(1); doListCreatureLib(); }}
+                twoPanelMode={!!creature}
+              />
+            </GlassCard>
+            {creature && (
+              <GlassCard>
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-xl font-semibold">Preview</h2>
+                  <LoadingButton onClick={doCloseCreature}>Close</LoadingButton>
+                </div>
+                <GlassCard>
+                  <CreaturePreview 
+                    creature={creature} 
+                    portraitUrl={creaturePortraitUrl}
+                    onGeneratePortrait={doCreaturePortrait}
+                    onSave={()=>{}} 
+                  />
                 </GlassCard>
               </GlassCard>
             )}

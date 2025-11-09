@@ -68,6 +68,24 @@ def init_db():
       prompt TEXT
     )
     """)
+    # Creature library
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS creature_library (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT,
+      created_at TEXT NOT NULL,
+      creature_json TEXT NOT NULL,
+      prompt TEXT,
+      portrait_png BLOB
+    )
+    """)
+    # ensure portrait column exists for older DBs
+    try:
+        cur.execute("ALTER TABLE creature_library ADD COLUMN portrait_png BLOB")
+        con.commit()
+        logger.info("Added portrait_png column to creature_library table.")
+    except sqlite3.OperationalError:
+        pass # column already exists
     con.commit()
     con.close()
     logger.info("Database initialized.")

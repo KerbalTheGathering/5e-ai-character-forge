@@ -31,13 +31,7 @@ export default function DraftPanel({
       <GlassCard className="flex-scroll">
         {/* Top: Name (half width) */}
       <div className="mb-2" style={{ width: '50%' }}>
-        <label className="block text-sm mb-1">Name</label>
-        <input
-          className="glass-input"
-          placeholder="e.g., Kaelis Stormsinger"
-          value={charName}
-          onChange={(e)=>setCharName(e.target.value)}
-        />
+        <div className="text-slate-400 font-semibold">{charName || draft.name || "—"}</div>
       </div>
         <div className="draft-grid">
           <div className="draft-left text-sm">

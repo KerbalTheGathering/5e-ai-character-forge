@@ -32,8 +32,8 @@ export default function Sidebar({
 }: {
   expanded: boolean;
   setExpanded: (b: boolean)=>void;
-  section: "home" | "char-new" | "char-lib" | "item-new" | "item-lib" | "spell-new" | "spell-lib";
-  onSelect: (s: "home"|"char-new"|"char-lib"|"item-new"|"item-lib"|"spell-new"|"spell-lib")=>void;
+  section: "home" | "char-new" | "char-lib" | "creature-new" | "creature-lib" | "item-new" | "item-lib" | "spell-new" | "spell-lib";
+  onSelect: (s: "home"|"char-new"|"char-lib"|"creature-new"|"creature-lib"|"item-new"|"item-lib"|"spell-new"|"spell-lib")=>void;
   apiOk: boolean | null;
   engine: 'google' | 'local';
   setEngine: (e:'google'|'local')=>void;
@@ -73,6 +73,14 @@ export default function Sidebar({
           <IconLibrary />{expanded && <span>Library</span>}
         </button>
         {/* Progression integrated into Character flow; removed standalone entries */}
+
+        <div className="nav-title" style={{marginTop:'.6rem'}}>{expanded ? 'Creature' : 'Creat'}</div>
+        <button className={`nav-btn ${section === "creature-new" ? "nav-active" : ""}`} onClick={()=>onSelect("creature-new")} title="New Creature">
+          <IconWand />{expanded && <span>New</span>}
+        </button>
+        <button className={`nav-btn ${section === "creature-lib" ? "nav-active" : ""}`} onClick={()=>onSelect("creature-lib")} title="Creature Library">
+          <IconLibrary />{expanded && <span>Library</span>}
+        </button>
 
         <div className="nav-title" style={{marginTop:'.6rem'}}>Item</div>
         <button className={`nav-btn ${section === "item-new" ? "nav-active" : ""}`} onClick={()=>onSelect("item-new")} title="New Magic Item">
