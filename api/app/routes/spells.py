@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Query
 from ..schemas import SpellInput, Spell, SpellExport
 from ..ai_inference import use_local_inference, local_text_generate, google_text_generate
-from ..database import create_item, get_item, list_items, delete_item
+from ..database import create_item, get_item, list_items, delete_item, get_db_connection
 from ..config import logger
 import json
 
@@ -113,7 +113,21 @@ async def spells_save(payload: SpellExport):
 @router.get("/api/spells/list")
 async def spells_list(limit: int = 10, page: int = 1, search: str | None = None, sort: str = "created_desc"):
     logger.debug("spells: list limit=%s page=%s search=%s sort=%s", limit, page, search, sort)
-    return list_items("spell_library", limit, page, search, sort)
+    result = list_items("spell_library", limit, page, search, sort)
+    # Enrich items with level and school from spell_json
+    con = get_db_connection()
+    for item in result["items"]:
+        row = con.execute("SELECT spell_json FROM spell_library WHERE id = ?", (item["id"],)).fetchone()
+        if row:
+            try:
+                spell_data = json.loads(row["spell_json"])
+                item["level"] = spell_data.get("level", 0)
+                item["school"] = spell_data.get("school", "")
+            except Exception:
+                item["level"] = 0
+                item["school"] = ""
+    con.close()
+    return result
 
 @router.get("/api/spells/get/{spell_id}")
 async def spells_get(spell_id: int):

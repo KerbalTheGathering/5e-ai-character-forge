@@ -6,7 +6,10 @@ export default function MagicItemPreview({ item, onSave }: { item: MagicItem | n
   return (
     <div className="text-sm card-flex">
       <div>
-        <div className="mb-2"><strong>{item.name}</strong> — {item.item_type} · {item.rarity} · {item.requires_attunement ? 'Requires Attunement' : 'No Attunement'}</div>
+        <div className="mb-2">
+          <div className="text-xl font-semibold mb-1">{item.name}</div>
+          <div className="text-sm text-slate-300">{item.item_type} · {item.rarity} · {item.requires_attunement ? 'Requires Attunement' : 'No Attunement'}</div>
+        </div>
         <div className="mb-2 whitespace-pre-wrap">{item.description}</div>
         {item.properties?.length>0 && (
           <div className="mb-2">Properties: {item.properties.join(" · ")}</div>

@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from ..schemas import MagicItemInput, MagicItem, MagicItemExport
 from ..ai_inference import use_local_inference, local_text_generate, google_text_generate
-from ..database import create_item, get_item, list_items, delete_item
+from ..database import create_item, get_item, list_items, delete_item, get_db_connection
 from ..pdf_export import export_magic_item_pdf_content
 from ..config import logger
 import json
@@ -51,7 +51,21 @@ async def items_save(payload: MagicItemExport):
 @router.get("/api/items/list")
 async def items_list(limit: int = 10, page: int = 1, search: str | None = None, sort: str = "created_desc"):
     logger.debug("items: list limit=%s page=%s search=%s sort=%s", limit, page, search, sort)
-    return list_items("item_library", limit, page, search, sort)
+    result = list_items("item_library", limit, page, search, sort)
+    # Enrich items with item_type and rarity from item_json
+    con = get_db_connection()
+    for item in result["items"]:
+        row = con.execute("SELECT item_json FROM item_library WHERE id = ?", (item["id"],)).fetchone()
+        if row:
+            try:
+                item_data = json.loads(row["item_json"])
+                item["item_type"] = item_data.get("item_type", "")
+                item["rarity"] = item_data.get("rarity", "")
+            except Exception:
+                item["item_type"] = ""
+                item["rarity"] = ""
+    con.close()
+    return result
 
 @router.get("/api/items/get/{item_id}")
 async def items_get(item_id: int):

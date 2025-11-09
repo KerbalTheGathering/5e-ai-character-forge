@@ -32,8 +32,8 @@ export default function Sidebar({
 }: {
   expanded: boolean;
   setExpanded: (b: boolean)=>void;
-  section: "char-new" | "char-lib" | "item-new" | "item-lib" | "spell-new" | "spell-lib";
-  onSelect: (s: "char-new"|"char-lib"|"item-new"|"item-lib"|"spell-new"|"spell-lib")=>void;
+  section: "home" | "char-new" | "char-lib" | "item-new" | "item-lib" | "spell-new" | "spell-lib";
+  onSelect: (s: "home"|"char-new"|"char-lib"|"item-new"|"item-lib"|"spell-new"|"spell-lib")=>void;
   apiOk: boolean | null;
   engine: 'google' | 'local';
   setEngine: (e:'google'|'local')=>void;
@@ -58,9 +58,9 @@ export default function Sidebar({
   return (
     <aside className={`sidebar ${expanded ? "" : "sidebar-collapsed"}`}>
       <div className="sidebar-header">
-        <div className="app-brand" onClick={()=>setExpanded(!expanded)} title="Toggle sidebar" style={{cursor:'pointer'}}>
-          <div className="brand-logo">5e</div>
-          {expanded && <div className="brand-text">Forge</div>}
+        <div className="app-brand" style={{cursor:'pointer'}}>
+          <div className="brand-logo" onClick={()=>setExpanded(!expanded)} title="Toggle sidebar">5e</div>
+          {expanded && <div className="brand-text" onClick={()=>onSelect("home")} title="Go to home" style={{cursor:'pointer'}}>Forge</div>}
         </div>
       </div>
 

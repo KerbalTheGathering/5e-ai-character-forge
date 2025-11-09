@@ -29,6 +29,7 @@ import SpellLibraryTable from "./components/SpellLibraryTable";
 import { generatePortrait, downloadPDF, generateMagicItem, saveMagicItem, listMagicItems, getMagicItem, deleteMagicItem, type MagicItem, generateSpell, saveSpell, listSpells, getSpell, deleteSpell, type Spell } from "./api";
 import Sidebar from "./components/Sidebar";
 import ProgressionPanel from "./components/ProgressionPanel";
+import LoadingButton from "./components/LoadingButton";
 
 // Class ability priorities (indices from dnd5eapi)
 const CLASS_PRIORITIES: Record<string, Ability[]> = {
@@ -79,8 +80,8 @@ export default function App() {
   const [portraitBase64, setPortraitBase64] = useState<string | null>(null);
   const [portraitUrl, setPortraitUrl] = useState<string | null>(null);
   // Nav section (progression integrated into character flow)
-  type Section = "char-new" | "char-lib" | "item-new" | "item-lib" | "spell-new" | "spell-lib";
-  const [section, setSection] = useState<Section>("char-new");
+  type Section = "home" | "char-new" | "char-lib" | "item-new" | "item-lib" | "spell-new" | "spell-lib";
+  const [section, setSection] = useState<Section>("home");
 
   // backstory
   const [tone, setTone] = useState<Tone>("custom");
@@ -92,7 +93,7 @@ export default function App() {
   const [lib, setLib] = useState<{id:number; name:string; created_at:string}[] | null>(null);
   const [busyLib, setBusyLib] = useState(false);  
   const [charPage, setCharPage] = useState(1);
-  const charPageSize = 4;
+  const charPageSize = 8;
   const [charTotal, setCharTotal] = useState(0);
   const [charSearch, setCharSearch] = useState("");
   const [charSort, setCharSort] = useState("created_desc");
@@ -102,7 +103,7 @@ export default function App() {
   const [itemLib, setItemLib] = useState<{id:number; name:string; created_at:string}[] | null>(null);
   const [busyItemLib, setBusyItemLib] = useState(false);
   const [itemPage, setItemPage] = useState(1);
-  const itemPageSize = 4;
+  const itemPageSize = 8;
   const [itemTotal, setItemTotal] = useState(0);
   const [itemSearch, setItemSearch] = useState("");
   const [itemSort, setItemSort] = useState("created_desc");
@@ -113,7 +114,7 @@ export default function App() {
   const [spellLib, setSpellLib] = useState<{id:number; name:string; created_at:string}[] | null>(null);
   const [busySpellLib, setBusySpellLib] = useState(false);
   const [spellPage, setSpellPage] = useState(1);
-  const spellPageSize = 4;
+  const spellPageSize = 8;
   const [spellTotal, setSpellTotal] = useState(0);
   const [spellSearch, setSpellSearch] = useState("");
   const [spellSort, setSpellSort] = useState("created_desc");
@@ -174,12 +175,74 @@ export default function App() {
     setSelectedBackground(bgMap[loadedDraft.background.toLowerCase()] ?? "");
 
     setLevel(loadedDraft.level);
+
+    // Load ability scores from draft
+    if (loadedDraft.abilities) {
+      const abilityScores: Record<string, number> = {
+        STR: loadedDraft.abilities.STR,
+        DEX: loadedDraft.abilities.DEX,
+        CON: loadedDraft.abilities.CON,
+        INT: loadedDraft.abilities.INT,
+        WIS: loadedDraft.abilities.WIS,
+        CHA: loadedDraft.abilities.CHA,
+      };
+      // Sort scores in descending order
+      const sortedScores = Object.values(abilityScores).sort((a, b) => b - a);
+      // Create AbilitySet
+      const abilitySet: AbilitySet = {
+        method: "loaded",
+        scores: sortedScores,
+        rolls: [],
+      };
+      setAbilities(abilitySet);
+      
+      // Determine assignment: map sorted scores back to their abilities
+      const used = new Set<string>();
+      const assignment: Ability[] = [];
+      for (const score of sortedScores) {
+        // Find which ability has this score (handle duplicates by using first unused match)
+        for (const [abil, val] of Object.entries(abilityScores)) {
+          if (val === score && !used.has(abil)) {
+            assignment.push(abil as Ability);
+            used.add(abil);
+            break;
+          }
+        }
+      }
+      setAssignment(assignment);
+    }
+
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   async function doDelete(id: number) {
     await deleteLibraryItem(id);
     await doListLib();
+    if (draft && draft.name) setDraft(null);
+  }
+  function doCloseChar() { setDraft(null); setBackstory(null); setCharName(""); setPortraitBase64(null); if (portraitUrl) { try{ URL.revokeObjectURL(portraitUrl);}catch{}; setPortraitUrl(null); } setProgPlan(null); }
+  
+  // Reset all state when navigating to a creation page
+  function resetToNewCreation() {
+    // Character state
+    setSelectedClass("");
+    setSelectedRace("");
+    setSelectedBackground("");
+    setLevel(1);
+    setAbilities(null);
+    setSeed("");
+    setAssignment(["STR","DEX","CON","INT","WIS","CHA"]);
+    setDraft(null);
+    setCharName("");
+    setBackstory(null);
+    setPortraitBase64(null);
+    if (portraitUrl) { try{ URL.revokeObjectURL(portraitUrl);}catch{}; setPortraitUrl(null); }
+    setProgPlan(null);
+    setCreateTab("pick");
+    // Magic item state
+    setItem(null);
+    // Spell state
+    setSpell(null);
   }
 
   // Magic item library helpers
@@ -189,12 +252,14 @@ export default function App() {
     finally { setBusyItemLib(false); }
   }
   async function doLoadItem(id:number) { const res = await getMagicItem(id); setItem(res.item); }
-  async function doDeleteItem(id:number) { await deleteMagicItem(id); await doListItemLib(); }
+  async function doDeleteItem(id:number) { await deleteMagicItem(id); await doListItemLib(); if (item && item.name) setItem(null); }
+  function doCloseItem() { setItem(null); }
 
   // spell lib helpers
   async function doListSpellLib(){ setBusySpellLib(true); try { const res = await listSpells(spellPageSize, spellPage, spellSearch, spellSort); setSpellLib(res.items); setSpellTotal(res.total);} finally { setBusySpellLib(false);} }
   async function doLoadSpell(id:number){ const res = await getSpell(id); setSpell(res.spell); }
-  async function doDeleteSpell(id:number){ await deleteSpell(id); await doListSpellLib(); }
+  async function doDeleteSpell(id:number){ await deleteSpell(id); await doListSpellLib(); if (spell && spell.name) setSpell(null); }
+  function doCloseSpell() { setSpell(null); }
 
   // progression is attached to character draft now; no separate library
 
@@ -252,7 +317,9 @@ export default function App() {
   useEffect(() => {
     const p = new URLSearchParams(location.search);
     const sec = p.get('sec') as typeof section | null;
-    if (sec) setSection(sec);
+    if (sec && (sec === "home" || sec === "char-new" || sec === "char-lib" || sec === "item-new" || sec === "item-lib" || sec === "spell-new" || sec === "spell-lib")) {
+      setSection(sec);
+    }
     const cp = Number(p.get('cp')||'1'); if (cp) setCharPage(cp);
     const cs = p.get('cs')||''; if (cs) setCharSearch(cs);
     const co = p.get('co')||''; if (co) setCharSort(co as any);
@@ -268,6 +335,10 @@ export default function App() {
     if (sec === 'item-lib') doListItemLib();
     if (sec === 'spell-lib') doListSpellLib();
     // no progression library
+    // If no section in URL, default to home
+    if (!sec) {
+      setSection("home");
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -425,12 +496,37 @@ export default function App() {
     <div className="min-h-screen app-bg text-slate-100 flex">
       <Sidebar expanded={navExpanded} setExpanded={setNavExpanded} section={section} onSelect={setSection} apiOk={apiOk} engine={engine} setEngine={setEngine} />
       <div className="p-6 flex-1">
+        {section === "home" && (
+          <div className="max-w-4xl mx-auto">
+            <h1 className="text-4xl font-bold mb-8 text-center">Welcome to the Forge</h1>
+            <div className="grid gap-6 md:grid-cols-3">
+              <GlassCard 
+                className="cursor-pointer hover:bg-white/10 transition-colors text-center py-8"
+                onClick={() => { resetToNewCreation(); setSection("char-new"); }}
+              >
+                <h2 className="text-2xl font-semibold">New Character</h2>
+              </GlassCard>
+              <GlassCard 
+                className="cursor-pointer hover:bg-white/10 transition-colors text-center py-8"
+                onClick={() => { resetToNewCreation(); setSection("item-new"); }}
+              >
+                <h2 className="text-2xl font-semibold">New Magic Item</h2>
+              </GlassCard>
+              <GlassCard 
+                className="cursor-pointer hover:bg-white/10 transition-colors text-center py-8"
+                onClick={() => { resetToNewCreation(); setSection("spell-new"); }}
+              >
+                <h2 className="text-2xl font-semibold">New Spell</h2>
+              </GlassCard>
+            </div>
+          </div>
+        )}
         {section === "char-new" && (
           <div className="grid gap-6 md:grid-cols-2 fill-grid">
             <div className="card-flex">
               <GlassCard className="mb-3">
                 <Tabs
-                  tabs={[{key:'pick',label:'Pick & Abilities'},{key:'prog',label:'Progression'},{key:'story',label:'Backstory'}]}
+                  tabs={[{key:'pick',label:'Pick & Abilities'},{key:'story',label:'Backstory'},{key:'prog',label:'Progression'}]}
                   active={createTab}
                   onChange={(k)=>setCreateTab(k as any)}
                 />
@@ -526,14 +622,26 @@ export default function App() {
         )}
 
         {section === "item-new" && (
-          <div className="grid gap-6 md:grid-cols-1">
-            <GlassCard>
-              <h2 className="text-xl font-semibold mb-3">Create New Magic Item</h2>
-              <MagicItemForm onGenerate={doGenerateItem} busy={busyItem} />
-            </GlassCard>
+          <div className="grid gap-6 md:grid-cols-2 fill-grid">
+            <div className="card-flex">
+              <GlassCard className="mb-3">
+                <h2 className="text-xl font-semibold mb-3">Create New Magic Item</h2>
+              </GlassCard>
+              <div className="flex-scroll">
+                <GlassCard>
+                  <MagicItemForm onGenerate={doGenerateItem} busy={busyItem} />
+                </GlassCard>
+              </div>
+            </div>
             <GlassCard>
               <h2 className="text-xl font-semibold mb-3">Preview</h2>
-              <MagicItemPreview item={item} onSave={doSaveItem} />
+              {!item ? (
+                <p className="text-slate-300">No item generated yet.</p>
+              ) : (
+                <GlassCard>
+                  <MagicItemPreview item={item} onSave={doSaveItem} />
+                </GlassCard>
+              )}
             </GlassCard>
           </div>
         )}
@@ -545,29 +653,12 @@ export default function App() {
             </GlassCard>
             <GlassCard>
               <h2 className="text-xl font-semibold mb-3">Preview</h2>
-              <SpellPreview spell={spell} onSave={async ()=>{ if(!spell) return; const res = await saveSpell(spell); await doListSpellLib(); }} />
+              <SpellPreview spell={spell} onSave={async ()=>{ if(!spell) return; await saveSpell(spell); await doListSpellLib(); }} />
             </GlassCard>
           </div>
         )}
         {section === "char-lib" && (
-          <div className="grid gap-6 md:grid-cols-1">
-            <GlassCard>
-              <h2 className="text-xl font-semibold mb-3">Preview</h2>
-              {!draft ? <p className="text-slate-300">Select a character.</p> : (
-                <DraftPanel
-                  draft={withName(draft)}
-                  backstory={backstory}
-                  charName={charName}
-                  setCharName={setCharName}
-                  downloadJSON={(d,b)=>downloadJSON(d,b,progPlan)}
-                  downloadMarkdown={(d,b)=>downloadMarkdown(d,b,progPlan)}
-                  doSave={doSave}
-                  portraitUrl={portraitUrl}
-                  onGeneratePortrait={doPortrait}
-                  onDownloadPDF={()=>downloadPDF(withName(draft), backstory, portraitBase64, progPlan)}
-                />
-              )}
-            </GlassCard>
+          <div className={`grid gap-6 ${draft ? "md:grid-cols-2 fill-grid" : "md:grid-cols-1"}`}>
             <GlassCard>
               <CharLibraryTable
                 rows={lib}
@@ -583,17 +674,36 @@ export default function App() {
                 onPageChange={(p)=>{ setCharPage(p); doListLib(); }}
                 onSearchChange={(q)=>{ setCharSearch(q); setCharPage(1); doListLib(); }}
                 onSortChange={(s)=>{ setCharSort(s); setCharPage(1); doListLib(); }}
+                twoPanelMode={!!draft}
               />
             </GlassCard>
+            {draft && (
+              <GlassCard>
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-xl font-semibold">Preview</h2>
+                  <LoadingButton onClick={doCloseChar}>Close</LoadingButton>
+                </div>
+                <GlassCard>
+                  <DraftPanel
+                    draft={withName(draft)}
+                    backstory={backstory}
+                    charName={charName}
+                    setCharName={setCharName}
+                    downloadJSON={(d,b)=>downloadJSON(d,b,progPlan)}
+                    downloadMarkdown={(d,b)=>downloadMarkdown(d,b,progPlan)}
+                    doSave={doSave}
+                    portraitUrl={portraitUrl}
+                    onGeneratePortrait={doPortrait}
+                    onDownloadPDF={()=>downloadPDF(withName(draft), backstory, portraitBase64, progPlan)}
+                  />
+                </GlassCard>
+              </GlassCard>
+            )}
           </div>
         )}
         {/* Removed standalone progression sections; integrated above */}
         {section === "item-lib" && (
-          <div className="grid gap-6 md:grid-cols-1">
-            <GlassCard>
-              <h2 className="text-xl font-semibold mb-3">Preview</h2>
-              <MagicItemPreview item={item} onSave={()=>{}} />
-            </GlassCard>
+          <div className={`grid gap-6 ${item ? "md:grid-cols-2 fill-grid" : "md:grid-cols-1"}`}>
             <GlassCard>
               <ItemLibraryTable
                 rows={itemLib}
@@ -609,16 +719,24 @@ export default function App() {
                 onPageChange={(p)=>{ setItemPage(p); doListItemLib(); }}
                 onSearchChange={(q)=>{ setItemSearch(q); setItemPage(1); doListItemLib(); }}
                 onSortChange={(s)=>{ setItemSort(s); setItemPage(1); doListItemLib(); }}
+                twoPanelMode={!!item}
               />
             </GlassCard>
+            {item && (
+              <GlassCard>
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-xl font-semibold">Preview</h2>
+                  <LoadingButton onClick={doCloseItem}>Close</LoadingButton>
+                </div>
+                <GlassCard>
+                  <MagicItemPreview item={item} onSave={()=>{}} />
+                </GlassCard>
+              </GlassCard>
+            )}
           </div>
         )}
         {section === "spell-lib" && (
-          <div className="grid gap-6 md:grid-cols-1">
-            <GlassCard>
-              <h2 className="text-xl font-semibold mb-3">Preview</h2>
-              <SpellPreview spell={spell} onSave={()=>{}} />
-            </GlassCard>
+          <div className={`grid gap-6 ${spell ? "md:grid-cols-2 fill-grid" : "md:grid-cols-1"}`}>
             <GlassCard>
               <SpellLibraryTable
                 rows={spellLib}
@@ -634,8 +752,20 @@ export default function App() {
                 onPageChange={(p)=>{ setSpellPage(p); doListSpellLib(); }}
                 onSearchChange={(q)=>{ setSpellSearch(q); setSpellPage(1); doListSpellLib(); }}
                 onSortChange={(s)=>{ setSpellSort(s); setSpellPage(1); doListSpellLib(); }}
+                twoPanelMode={!!spell}
               />
             </GlassCard>
+            {spell && (
+              <GlassCard>
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-xl font-semibold">Preview</h2>
+                  <LoadingButton onClick={doCloseSpell}>Close</LoadingButton>
+                </div>
+                <GlassCard>
+                  <SpellPreview spell={spell} onSave={()=>{}} />
+                </GlassCard>
+              </GlassCard>
+            )}
           </div>
         )}
       </div>

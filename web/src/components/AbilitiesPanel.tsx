@@ -21,7 +21,7 @@ export default function AbilitiesPanel({
           <div className="text-sm text-slate-300 mb-2">Sorted (high→low): {abilities.scores.join(", ")}</div>
           <div className="grid gap-2 flex-scroll" style={{gridTemplateColumns:"repeat(2,minmax(0,1fr))", columnGap: "2rem"}}>
             {ABILS.map((ab, i)=>(
-              <div key={ab} className="ability-row">
+              <div key={ab} className="ability-row" style={{display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
                 <select
                   className="glass-input"
                   style={{ width: 'auto', minWidth: '110px' }}

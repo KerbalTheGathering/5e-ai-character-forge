@@ -15,8 +15,9 @@ export default function ItemLibraryTable({
   onPageChange,
   onSearchChange,
   onSortChange,
+  twoPanelMode = false,
 }: {
-  rows: {id:number; name:string; created_at:string}[] | null;
+  rows: {id:number; name:string; created_at:string; item_type?:string; rarity?:string}[] | null;
   total: number;
   page: number;
   pageSize: number;
@@ -29,6 +30,7 @@ export default function ItemLibraryTable({
   onPageChange: (p:number)=>void;
   onSearchChange: (q:string)=>void;
   onSortChange: (s:string)=>void;
+  twoPanelMode?: boolean;
 }){
   const pages = Math.max(1, Math.ceil((total||0) / pageSize));
   const slice = rows;
@@ -53,19 +55,30 @@ export default function ItemLibraryTable({
         <div className="table-wrap">
           <table className="table">
             <thead>
-              <tr><th>Name</th><th>Created</th><th className="actions-col">Actions</th></tr>
+              {twoPanelMode ? (
+                <tr><th>Name</th><th className="actions-col">Actions</th></tr>
+              ) : (
+                <tr><th>Name</th><th>Created</th><th className="actions-col">Actions</th></tr>
+              )}
             </thead>
             <tbody>
-              {slice.map(r => (
-                <tr key={r.id}>
-                  <td>{r.name}</td>
-                  <td className="text-slate-400">{r.created_at}</td>
-                  <td className="actions-cell">
-                    <LoadingButton onClick={()=>onSelect(r.id)}>Open</LoadingButton>
-                    <LoadingButton onClick={()=>onDelete(r.id)}>Delete</LoadingButton>
-                  </td>
-                </tr>
-              ))}
+              {slice.map(r => {
+                const itemType = r.item_type || "";
+                const rarity = r.rarity || "";
+                const nameDisplay = itemType && rarity 
+                  ? `${r.name}: ${itemType} ${rarity}`
+                  : r.name;
+                return (
+                  <tr key={r.id}>
+                    <td>{nameDisplay}</td>
+                    {!twoPanelMode && <td className="text-slate-400">{r.created_at}</td>}
+                    <td className="actions-cell">
+                      <LoadingButton onClick={()=>onSelect(r.id)}>Open</LoadingButton>
+                      <LoadingButton onClick={()=>onDelete(r.id)}>Delete</LoadingButton>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

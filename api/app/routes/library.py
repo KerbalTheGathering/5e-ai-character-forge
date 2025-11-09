@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from ..schemas import SaveInput
-from ..database import create_item, get_item, list_items, delete_item
+from ..database import create_item, get_item, list_items, delete_item, get_db_connection
 from ..config import logger
 import json
 import base64
@@ -36,7 +36,21 @@ async def library_save(payload: SaveInput):
 @router.get("/api/library/list")
 async def library_list(limit: int = 10, page: int = 1, search: str | None = None, sort: str = "created_desc"):
     logger.debug("library: list limit=%s page=%s search=%s sort=%s", limit, page, search, sort)
-    return list_items("library", limit, page, search, sort)
+    result = list_items("library", limit, page, search, sort)
+    # Enrich items with class and race from draft_json
+    con = get_db_connection()
+    for item in result["items"]:
+        row = con.execute("SELECT draft_json FROM library WHERE id = ?", (item["id"],)).fetchone()
+        if row:
+            try:
+                draft_data = json.loads(row["draft_json"])
+                item["cls"] = draft_data.get("cls", "")
+                item["race"] = draft_data.get("race", "")
+            except Exception:
+                item["cls"] = ""
+                item["race"] = ""
+    con.close()
+    return result
 
 @router.get("/api/library/get/{item_id}")
 async def library_get(item_id: int):

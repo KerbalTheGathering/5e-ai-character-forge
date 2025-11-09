@@ -156,7 +156,7 @@ export async function listLibrary(limit = 10, page = 1, search: string = "", sor
   if (search) q.set('search', search);
   const res = await fetch(`http://localhost:${import.meta.env.VITE_API_PORT ?? 8000}/api/library/list?${q.toString()}`);
   if (!res.ok) throw new Error(`list failed: ${res.status}`);
-  return res.json() as Promise<{ items: {id:number; name:string; created_at:string}[]; total:number }>;
+  return res.json() as Promise<{ items: {id:number; name:string; created_at:string; cls?:string; race?:string}[]; total:number }>;
 }
 
 export async function getLibraryItem(id: number) {
@@ -215,7 +215,7 @@ export async function listMagicItems(limit = 10, page = 1, search: string = "", 
   if (search) q.set('search', search);
   const res = await fetch(`http://localhost:${import.meta.env.VITE_API_PORT ?? 8000}/api/items/list?${q.toString()}`);
   if (!res.ok) throw new Error(`item list failed: ${res.status}`);
-  return res.json() as Promise<{ items: {id:number; name:string; created_at:string}[]; total:number }>;
+  return res.json() as Promise<{ items: {id:number; name:string; created_at:string; item_type?:string; rarity?:string}[]; total:number }>;
 }
 
 export async function getMagicItem(id: number) {
@@ -301,7 +301,7 @@ export async function listSpells(limit=10, page=1, search='', sort='created_desc
   const q = new URLSearchParams({ limit:String(limit), page:String(page), sort}); if (search) q.set('search', search);
   const res = await fetch(`http://localhost:${import.meta.env.VITE_API_PORT ?? 8000}/api/spells/list?${q.toString()}`);
   if (!res.ok) throw new Error(`spells list failed: ${res.status}`);
-  return res.json() as Promise<{ items:{id:number; name:string; created_at:string}[], total:number }>;
+  return res.json() as Promise<{ items:{id:number; name:string; created_at:string; level?:number; school?:string}[], total:number }>;
 }
 
 export async function getSpell(id:number) {
